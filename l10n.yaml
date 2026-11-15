@@ -1,0 +1,9 @@
+# gen-l10n config - Flutter first-party i18n (no third-party dependency).
+# Catalogs live in lib/l10n/app_<locale>.arb; the template (source of truth)
+# is app_en.arb. The build generates an AppLocalizations class; reference
+# strings as context.l10n.<key> (see lib/l10n/l10n_ext.dart).
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+nullable-getter: false

@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "slug": "tech",
+      "title": "Tech",
+      "icon": "memory",
+      "feeds": [
+        {
+          "title": "Ars Technica",
+          "url": "https://feeds.arstechnica.com/arstechnica/index",
+          "site_url": "https://arstechnica.com",
+          "description": "Tech news, science, policy, and culture."
+        },
+        {
+          "title": "The Verge",
+          "url": "https://www.theverge.com/rss/index.xml",
+          "site_url": "https://www.theverge.com",
+          "description": "Technology, science, art, and culture."
+        },
+        {
+          "title": "Hacker News",
+          "url": "https://hnrss.org/frontpage",
+          "site_url": "https://news.ycombinator.com",
+          "description": "Front-page stories from Hacker News."
+        },
+        {
+          "title": "TechCrunch",
+          "url": "https://techcrunch.com/feed/",
+          "site_url": "https://techcrunch.com",
+          "description": "Startups, gadgets, and the tech industry."
+        },
+        {
+          "title": "Wired",
+          "url": "https://www.wired.com/feed/rss",
+          "site_url": "https://www.wired.com",
+          "description": "How technology is changing every part of our lives."
+        },
+        {
+          "title": "Engadget",
+          "url": "https://www.engadget.com/rss.xml",
+          "site_url": "https://www.engadget.com",
+          "description": "Consumer technology news and reviews."
+        },
+        {
+          "title": "MIT Technology Review",
+          "url": "https://www.technologyreview.com/feed/",
+          "site_url": "https://www.technologyreview.com",
+          "description": "Deep coverage of emerging technology."
+        }
+      ]
+    },
+    {
+      "slug": "world-news",
+      "title": "World News",
+      "icon": "public",
+      "feeds": [
+        {
+          "title": "BBC News — World",
+          "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+          "site_url": "https://www.bbc.com/news/world",
+          "description": "Latest world news from the BBC."
+        },
+        {
+          "title": "NPR News",
+          "url": "https://feeds.npr.org/1001/rss.xml",
+          "site_url": "https://www.npr.org",
+          "description": "Top stories from NPR News."
+        },
+        {
+          "title": "The Guardian — World",
+          "url": "https://www.theguardian.com/world/rss",
+          "site_url": "https://www.theguardian.com/world",
+          "description": "World news, analysis, and comment from The Guardian."
+        },
+        {
+          "title": "Al Jazeera",
+          "url": "https://www.aljazeera.com/xml/rss/all.xml",
+          "site_url": "https://www.aljazeera.com",
+          "description": "News and current affairs from Al Jazeera."
+        },
+        {
+          "title": "Deutsche Welle",
+          "url": "https://rss.dw.com/rdf/rss-en-all",
+          "site_url": "https://www.dw.com",
+          "description": "Germany's international broadcaster, in English."
+        }
+      ]
+    },
+    {
+      "slug": "crypto",
+      "title": "Crypto",
+      "icon": "currency_bitcoin",
+      "feeds": [
+        {
+          "title": "CoinDesk",
+          "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+          "site_url": "https://www.coindesk.com",
+          "description": "News on bitcoin, ethereum, and the crypto economy."
+        },
+        {
+          "title": "Cointelegraph",
+          "url": "https://cointelegraph.com/rss",
+          "site_url": "https://cointelegraph.com",
+          "description": "Blockchain, crypto, and fintech news."
+        },
+        {
+          "title": "Decrypt",
+          "url": "https://decrypt.co/feed",
+          "site_url": "https://decrypt.co",
+          "description": "Demystifying the decentralized web."
+        },
+        {
+          "title": "The Defiant",
+          "url": "https://thedefiant.io/feed",
+          "site_url": "https://thedefiant.io",
+          "description": "DeFi news, analysis, and research."
+        },
+        {
+          "title": "Bitcoin Magazine",
+          "url": "https://bitcoinmagazine.com/feed",
+          "site_url": "https://bitcoinmagazine.com",
+          "description": "The original publication covering Bitcoin."
+        }
+      ]
+    },
+    {
+      "slug": "art-culture",
+      "title": "Art & Culture",
+      "icon": "palette",
+      "feeds": [
+        {
+          "title": "Colossal",
+          "url": "https://www.thisiscolossal.com/feed/",
+          "site_url": "https://www.thisiscolossal.com",
+          "description": "Art, design, and visual culture."
+        },
+        {
+          "title": "Hyperallergic",
+          "url": "https://hyperallergic.com/feed/",
+          "site_url": "https://hyperallergic.com",
+          "description": "Perspectives on art and its discontents."
+        },
+        {
+          "title": "Aeon",
+          "url": "https://aeon.co/feed.rss",
+          "site_url": "https://aeon.co",
+          "description": "Essays on culture, philosophy, and society."
+        },
+        {
+          "title": "The Paris Review",
+          "url": "https://www.theparisreview.org/blog/feed/",
+          "site_url": "https://www.theparisreview.org",
+          "description": "Literature, interviews, and the writing life."
+        },
+        {
+          "title": "Open Culture",
+          "url": "https://www.openculture.com/feed",
+          "site_url": "https://www.openculture.com",
+          "description": "Free cultural and educational media on the web."
+        }
+      ]
+    },
+    {
+      "slug": "science",
+      "title": "Science",
+      "icon": "science",
+      "feeds": [
+        {
+          "title": "NASA Breaking News",
+          "url": "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+          "site_url": "https://www.nasa.gov",
+          "description": "The latest news from NASA."
+        },
+        {
+          "title": "Quanta Magazine",
+          "url": "https://www.quantamagazine.org/feed/",
+          "site_url": "https://www.quantamagazine.org",
+          "description": "Illuminating mathematics and basic science."
+        },
+        {
+          "title": "ScienceDaily",
+          "url": "https://www.sciencedaily.com/rss/all.xml",
+          "site_url": "https://www.sciencedaily.com",
+          "description": "Breaking research news across the sciences."
+        },
+        {
+          "title": "Phys.org",
+          "url": "https://phys.org/rss-feed/",
+          "site_url": "https://phys.org",
+          "description": "News on physics, space, earth, and technology."
+        },
+        {
+          "title": "Nature",
+          "url": "https://www.nature.com/nature.rss",
+          "site_url": "https://www.nature.com",
+          "description": "Research and news from the journal Nature."
+        }
+      ]
+    }
+  ]
+}

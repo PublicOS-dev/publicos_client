@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release builds shrink resources (isShrinkResources = true). The message-notification
+     small icon is referenced only by NAME, as a string, from PublicOS_Core
+     (publicos_conversations.dart: icon: 'ic_stat_notification'), so the shrinker could not
+     see it and stripped it: every message notification then failed with
+     "invalid_icon ... ic_stat_notification could not be found" and Android showed nothing.
+     Any drawable named only from Dart goes here. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_notification" />
