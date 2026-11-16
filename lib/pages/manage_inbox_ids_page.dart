@@ -44,6 +44,12 @@ import 'package:publicos_client/widgets/error/error_l10n.dart';
 /// active client). `_originalKeyLabel` is saved in `initState` and restored in
 /// `dispose`, so the messages tab's cached conversations remain valid by the
 /// time the user navigates back.
+///
+/// The switch can fail (a key that is on this device but not set up for
+/// messages here: `selectKey` throws). Nothing is then read or offered for
+/// that row: `_isActiveInbox` gates `_fetchInboxState` and every action that
+/// runs on the active client, and the drawer shows the not-set-up note
+/// (reading anyway would show the previous key's inbox under that row).
 
 // ============================================================================
 // Private data models
@@ -129,7 +135,13 @@ class _InboxStateData {
 // ============================================================================
 
 class ManageInboxIdsPage extends StatefulWidget {
-  const ManageInboxIdsPage({super.key});
+  /// A key handed over by another phone's QR (`publicos://link_key/…`, see
+  /// `AppInitializer._takeKeyLinkLink`). When set, the page asks which of
+  /// this device's inboxes to add it to as soon as the list has loaded, runs
+  /// the usual import path, and zeroes the bytes. Memory only, never stored.
+  final Uint8List? linkKey;
+
+  const ManageInboxIdsPage({super.key, this.linkKey});
 
   @override
   State<ManageInboxIdsPage> createState() => _ManageInboxIdsPageState();
@@ -154,6 +166,21 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
   final Map<String, bool> _loadingStates = {};
   String? _currentInstallationId;
 
+  /// Inboxes whose key is on this device but could not be made the active
+  /// XMTP client (the key is not set up for messages here). Their drawer
+  /// shows a note, never data: everything the drawer reads and every action
+  /// it offers runs on the ACTIVE client.
+  final Set<String> _notActiveHere = {};
+
+  /// True only when the active XMTP client IS [inboxId]. The gate for
+  /// everything that reads or writes through the active client.
+  bool _isActiveInbox(String inboxId) {
+    final active = Contact.normalizeInboxId(PublicOS.clientXmtpInboxId);
+    final wanted = Contact.normalizeInboxId(inboxId);
+    if (active == null || wanted == null) return false;
+    return active.toLowerCase() == wanted.toLowerCase();
+  }
+
   bool _isSyncingConsent = false;
   bool _isSyncingHistory = false;
   bool _isRevokingOffline = false;
@@ -175,7 +202,9 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
     _loadMyContact();
     _loadCurrentInstallationId();
     _loadBannerSetting();
-    _loadData();
+    _loadData().then((_) {
+      if (mounted && widget.linkKey != null) _runLinkKeyFlow();
+    });
   }
 
   Future<void> _loadBannerSetting() async {
@@ -514,7 +543,19 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
 
     if (entry.localKeys.isNotEmpty) {
       await _switchToKeyForInbox(inboxId);
-      await _fetchInboxState(inboxId);
+      if (_isActiveInbox(inboxId)) {
+        _notActiveHere.remove(inboxId);
+        // The installation id belongs to the active client: re-read it, or
+        // THIS DEVICE (and the revoke button it hides) follows the old key.
+        await _loadCurrentInstallationId();
+        await _fetchInboxState(inboxId);
+      } else {
+        // The switch did not land (key not set up here). Reading now would
+        // return the inbox of whichever key IS active.
+        debugPrint(
+            '[InboxMgr] expand $inboxId: active client is ${PublicOS.clientXmtpInboxId} (key "${PublicOS.currentXmtpKeyLabel}"), not this inbox. Showing the not-set-up note.');
+        _notActiveHere.add(inboxId);
+      }
     }
 
     // User may have bailed / tapped a different row mid-fetch; don't
@@ -544,6 +585,13 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
 
   Future<void> _fetchInboxState(String inboxId) async {
     if (_loadingStates[inboxId] == true) return;
+    // `getInboxState` reads the ACTIVE client's inbox. Never file that under
+    // another inbox's row.
+    if (!_isActiveInbox(inboxId)) {
+      debugPrint(
+          '[InboxMgr] fetch $inboxId skipped: active client is ${PublicOS.clientXmtpInboxId}');
+      return;
+    }
     setState(() => _loadingStates[inboxId] = true);
 
     try {
@@ -551,6 +599,17 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
           await PublicOSXmtp.getInboxState(refreshFromNetwork: true);
       if (!mounted) return;
       if (state == null) {
+        setState(() => _loadingStates[inboxId] = false);
+        return;
+      }
+      // Checked again on what came back: the answer must be about this inbox.
+      final gotId = Contact.normalizeInboxId(state['inboxId'] as String?);
+      if (!_isActiveInbox(inboxId) ||
+          (gotId != null &&
+              gotId.toLowerCase() !=
+                  Contact.normalizeInboxId(inboxId)?.toLowerCase())) {
+        debugPrint(
+            '[InboxMgr] fetch $inboxId dropped: answer is for ${state['inboxId']}');
         setState(() => _loadingStates[inboxId] = false);
         return;
       }
@@ -791,6 +850,11 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
     _InboxStateData inboxState,
   ) async {
     final l10n = context.l10n;
+    // Runs on the active client: refuse unless that IS this inbox.
+    if (!_isActiveInbox(inboxState.inboxId)) {
+      _showSnack(l10n.inboxIdsInstallationRevokeFailed);
+      return;
+    }
     final confirmed = await _confirmDestructive(
       title: l10n.inboxIdsRevokeInstallationTitle,
       body: l10n.inboxIdsRevokeInstallationBody(shortenString(installationId)),
@@ -839,6 +903,11 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
   ) async {
     final otherCount = inboxState.installations.length - 1;
     final l10n = context.l10n;
+    // Runs on the active client: refuse unless that IS this inbox.
+    if (!_isActiveInbox(entry.inboxId)) {
+      _showSnack(l10n.inboxIdsRevokeInstallationsFailed);
+      return;
+    }
 
     final confirmed = await _confirmDestructive(
       title: l10n.inboxIdsRevokeAllTitle,
@@ -887,6 +956,11 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
     _InboxStateData inboxState,
   ) async {
     final l10n = context.l10n;
+    // Runs on the active client: refuse unless that IS this inbox.
+    if (!_isActiveInbox(inboxState.inboxId)) {
+      _showSnack(l10n.inboxIdsAccountRemoveFailed);
+      return;
+    }
     final confirmed = await _confirmDestructive(
       title: l10n.inboxIdsRemoveAccountTitle,
       body: l10n.inboxIdsRemoveAccountBody(shortenString(identifier)),
@@ -1055,6 +1129,11 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
     _InboxEntry entry,
     _InboxStateData inboxState,
   ) async {
+    // The add runs on the active client: refuse unless that IS this inbox.
+    if (!_isActiveInbox(entry.inboxId)) {
+      _showSnack(context.l10n.inboxIdsAccountAddFailed);
+      return;
+    }
     final choice = await showDialog<String>(
       context: context,
       builder: (_) => const _AddAccountOptionsDialog(),
@@ -1159,6 +1238,17 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
       return;
     }
 
+    if (await _addKeyBytes(privateKeyBytes, address) && mounted) {
+      _stateCache.remove(entry.inboxId);
+      await _fetchInboxState(entry.inboxId);
+    }
+  }
+
+  /// Add a key given as raw bytes to the ACTIVE client's inbox: the
+  /// "already linked elsewhere, you'll lose it" check, then addAccount.
+  /// Shared by Import key and the QR handoff. Snacks its own outcome.
+  Future<bool> _addKeyBytes(Uint8List keyBytes, String address) async {
+    final l10n = context.l10n;
     try {
       final canMessage = await PublicOSConversations.canMessage(address);
       if (canMessage && mounted) {
@@ -1167,26 +1257,166 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
           body: l10n.inboxIdsKeyAlreadyLinkedBodyImport,
           destructiveLabel: l10n.inboxIdsProceed,
         );
-        if (proceed != true) return;
+        if (proceed != true) return false;
       }
+      if (!mounted) return false;
 
       setState(() => _isLoading = true);
       final success = await PublicOSXmtp.addAccountToInbox(
-        privateKeyBytes,
+        keyBytes,
         allowReassignInboxId: canMessage,
       );
-      if (success && mounted) {
-        _showSnack(l10n.inboxIdsAccountAdded);
-        _stateCache.remove(entry.inboxId);
-        await _fetchInboxState(entry.inboxId);
-      } else if (mounted) {
-        _showSnack(l10n.inboxIdsAccountAddFailed);
-      }
+      if (!mounted) return false;
+      _showSnack(
+          success ? l10n.inboxIdsAccountAdded : l10n.inboxIdsAccountAddFailed);
+      return success;
     } catch (e) {
       _snackError(e);
+      return false;
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// The QR key handoff, receiving side: another
+  /// phone showed one of its keychain keys as a `publicos://link_key/` QR,
+  /// this phone's camera opened it here. Pick one of this device's inboxes,
+  /// confirm, switch to that inbox's key, then the same path as Import key.
+  /// The key is never stored: the bytes are zeroed whatever happens.
+  bool _linkKeyHandled = false;
+
+  Future<void> _runLinkKeyFlow() async {
+    final bytes = widget.linkKey;
+    if (bytes == null || _linkKeyHandled) return;
+    _linkKeyHandled = true;
+    final l10n = context.l10n;
+    try {
+      final String address;
+      try {
+        address = EthPrivateKey(bytes).address.eip55With0x;
+      } catch (_) {
+        _showSnack(l10n.linkKeyInvalid);
+        return;
+      }
+      final short = shortenString(address);
+
+      // Only inboxes this device holds a key for: the add runs on that
+      // inbox's client.
+      final targets = _entries.where((e) => e.isManageable).toList();
+      if (targets.isEmpty) {
+        _showSnack(l10n.linkKeyNoInboxes);
+        return;
+      }
+      final picked = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (_) => _KeychainPickerDialog(
+          title: l10n.linkKeyPickInboxTitle(short),
+          keys: [
+            for (final e in targets)
+              {'label': e.displayName, 'address': e.inboxId, 'inboxId': e.inboxId},
+          ],
+        ),
+      );
+      if (picked == null || !mounted) return;
+      final entry = targets.firstWhere((e) => e.inboxId == picked['inboxId']);
+      final inboxName = '${entry.displayName} ${shortenString(entry.inboxId)}';
+
+      final ok = await _confirmDestructive(
+        title: l10n.linkKeyConfirmTitle,
+        body: l10n.linkKeyConfirmBody(short, inboxName),
+        destructiveLabel: l10n.linkKeyAdd,
+      );
+      if (ok != true || !mounted) return;
+
+      await _switchToKeyForInbox(entry.inboxId);
+      if (Contact.normalizeInboxId(PublicOS.clientXmtpInboxId) !=
+          Contact.normalizeInboxId(entry.inboxId)) {
+        // The inbox's key could not be loaded: adding now would land the key
+        // in whichever inbox IS active.
+        _showSnack(l10n.inboxIdsAccountAddFailed);
+        return;
+      }
+      if (!await _addKeyBytes(bytes, address) || !mounted) return;
+      _stateCache.remove(entry.inboxId);
+      if (_expandedInboxId == entry.inboxId) {
+        await _fetchInboxState(entry.inboxId);
+      }
+      if (!mounted) return;
+      await _showInfo(
+        title: l10n.linkKeyAddedTitle,
+        body: l10n.linkKeyAddedBody(short, inboxName),
+      );
+    } finally {
+      bytes.fillRange(0, bytes.length, 0);
+    }
+  }
+
+  /// Glass info dialog: title, body, one DONE.
+  Future<void> _showInfo({required String title, required String body}) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final tokens = GlassTokens.of(ctx);
+        return Dialog(
+          constraints: const BoxConstraints(
+              minWidth: DialogWidth.min, maxWidth: DialogWidth.s),
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration:
+                GlassTheme.glassBox(ctx).copyWith(color: tokens.surfaceDeep),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Icon(Icons.check_circle_outline_rounded,
+                    color: tokens.connectedAccent, size: 36),
+                const SizedBox(height: 14),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
+                    color: tokens.starkWhite,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
+                    color: tokens.textDim,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: tokens.starkWhite,
+                    foregroundColor: tokens.background,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    ctx.l10n.secretDialogsDone,
+                    style: const TextStyle(
+                      fontFamily: 'SpaceGrotesk',
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _performAddAccount(
@@ -1891,7 +2121,12 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
     // Collapsing `inboxState == null → spinner` into the loading check
     // prevents a "Failed to load" flash on the first frame after expand.
     final noLocalKey = inboxState == null && !entry.isManageable;
-    final showSpinner = isLoading || (inboxState == null && !noLocalKey);
+    // The key is here but is not set up for messages on this device, so the
+    // client could not be switched to it: a note, never another inbox's data.
+    final notSetUpHere =
+        inboxState == null && _notActiveHere.contains(entry.inboxId);
+    final showSpinner =
+        isLoading || (inboxState == null && !noLocalKey && !notSetUpHere);
 
     return Container(
       margin: const EdgeInsets.only(top: 6),
@@ -1915,8 +2150,8 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
                 ),
               ),
             )
-          : noLocalKey
-              ? _buildNoLocalKeyState(entry, tokens)
+          : (noLocalKey || notSetUpHere)
+              ? _buildNoLocalKeyState(entry, tokens, notSetUp: notSetUpHere)
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1938,7 +2173,8 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
   /// require the XMTP client to be on that key), so the drawer just
   /// surfaces an explainer + the existing copy/delete row actions stay
   /// available up above.
-  Widget _buildNoLocalKeyState(_InboxEntry entry, GlassTokens tokens) {
+  Widget _buildNoLocalKeyState(_InboxEntry entry, GlassTokens tokens,
+      {bool notSetUp = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1951,7 +2187,9 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
             ),
             const SizedBox(width: 8),
             Text(
-              context.l10n.inboxIdsNoLocalKeyTitle,
+              notSetUp
+                  ? context.l10n.inboxIdsNotSetUpTitle
+                  : context.l10n.inboxIdsNoLocalKeyTitle,
               style: TextStyle(
                 fontFamily: 'SpaceGrotesk',
                 color: tokens.starkWhite,
@@ -1964,7 +2202,9 @@ class _ManageInboxIdsPageState extends State<ManageInboxIdsPage>
         ),
         const SizedBox(height: 6),
         Text(
-          context.l10n.inboxIdsNoLocalKeyBody,
+          notSetUp
+              ? context.l10n.inboxIdsNotSetUpBody
+              : context.l10n.inboxIdsNoLocalKeyBody,
           style: TextStyle(
             fontFamily: 'SpaceGrotesk',
             color: tokens.textDim,
@@ -2792,6 +3032,16 @@ class _AddAccountOptionsDialog extends StatelessWidget {
               subtitle: context.l10n.inboxIdsMethodImportKeySubtitle,
               onTap: () => Navigator.pop(context, 'import'),
             ),
+            const SizedBox(height: 8),
+            // Not an option on this phone: it explains the QR handoff, which
+            // starts on the phone that HOLDS the key (its keychain).
+            _MethodOption(
+              tokens: tokens,
+              icon: Icons.qr_code_2_rounded,
+              title: context.l10n.inboxIdsMethodQrTitle,
+              subtitle: context.l10n.inboxIdsMethodQrSubtitle,
+              onTap: null,
+            ),
             const SizedBox(height: 14),
             Align(
               alignment: Alignment.centerRight,
@@ -3009,7 +3259,10 @@ class _MethodOption extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+
+  /// Null = an explanation, not an option: no tap, no chevron (the Add
+  /// key dialog's "QR from another phone" row).
+  final VoidCallback? onTap;
   const _MethodOption({
     required this.tokens,
     required this.icon,
@@ -3066,7 +3319,8 @@ class _MethodOption extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: tokens.textDim),
+            if (onTap != null)
+              Icon(Icons.chevron_right_rounded, color: tokens.textDim),
           ],
         ),
       ),

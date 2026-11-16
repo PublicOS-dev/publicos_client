@@ -1390,7 +1390,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
             key: 'onboarding_completed',
             value: 'true',
             isSystem: true,
-            expiration: DateTime.now().add(const Duration(days: 3650)),
             isExpired: false,
           ),
         );
@@ -1729,7 +1728,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         key: 'profile.avatar.nft',
         value: _refFor(source, ids[source.pfp]).encode(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
 
   /// The banner record for a kit.
@@ -1738,7 +1736,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         key: 'profile.banner.nft',
         value: _refFor(source, ids[source.banner]).encode(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
 
   /// The card records for an arrangement.
@@ -1753,7 +1750,7 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
   /// reflow of it.
   List<Record> _kitCardRecords(
       _KitSource source, List<BigInt> ids, List<_CardSpec> specs) {
-    final expiration = DateTime.now().add(const Duration(days: 365));
+    final expiration = Record.never; // records do not expire
     String? rank;
     final out = <Record>[];
     var kitIndex = 0;
@@ -1939,7 +1936,6 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
         Record.asProfile(
           key: 'profile.bio',
           value: bio,
-          expiration: DateTime.now().add(const Duration(days: 365)),
           icon: Icons.person_rounded.codePoint,
           customMetadataAttributes: const {
             'bioTextColor': 0xFFFFFFFF,
@@ -4911,7 +4907,7 @@ class _ProfileCardsPreview extends StatelessWidget {
   List<Record> _previewRecords() {
     final specs = previewSpecs!;
     final ids = kitIds!;
-    final expiration = DateTime.now().add(const Duration(days: 365));
+    final expiration = Record.never; // records do not expire
     String? rank;
     final out = <Record>[];
     var kitIndex = 0;

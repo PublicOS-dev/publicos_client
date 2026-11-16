@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +11,7 @@ import 'package:publicos_client/data/demo_contacts.dart';
 import 'package:publicos_client/push_notifications_service.dart';
 import 'package:publicos_client/router.dart';
 import 'package:publicos_client/pages/browser.dart';
+import 'package:publicos_client/pages/manage_inbox_ids_page.dart';
 import 'package:publicos_client/l10n/boot_phase.dart';
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/utils/own_links.dart';
@@ -67,11 +69,16 @@ class AppInitializer {
     // a different account signs in.
     appState.onPendingRouteDropped = () => _toastLinkTargetNotFound(router);
 
+    // A link_key key that arrived before sign-in opens once an account is up.
+    appState.addListener(() => _openPendingKeyLink(router));
+
     _deepLinkChannel.setMethodCallHandler((call) async {
       if (call.method == 'onDeepLink') {
         final url = call.arguments as String;
-        // An import_key link carries the words: never print it.
-        if (!url.startsWith('publicos://import_key/')) {
+        // An import_key link carries the words, a link_key link the key:
+        // never print either.
+        if (!url.startsWith('publicos://import_key/') &&
+            !url.startsWith('publicos://link_key/')) {
           print('AppInitializer: Deep link received: $url');
         }
         _routeLink(router, url);
@@ -88,8 +95,10 @@ class AppInitializer {
     // Pull cold-start deep link (may arrive before push handler was registered)
     _deepLinkChannel.invokeMethod<String>('getInitialLink').then((url) {
       if (url != null && url.isNotEmpty) {
-        // Never print this one: an import_key link carries the words.
+        // Never print these: an import_key link carries the words, a
+        // link_key link the key.
         if (_takeKeyImportLink(url, router: router)) return;
+        if (_takeKeyLinkLink(url, router: router)) return;
         print('AppInitializer: Cold-start deep link: $url');
         final route = _parseDeepLinkToRoute(url);
         if (route != null) {
@@ -130,6 +139,7 @@ class AppInitializer {
   /// only when [url] does not parse to a route.
   bool _routeLink(GoRouter router, String url) {
     if (_takeKeyImportLink(url, router: router)) return true;
+    if (_takeKeyLinkLink(url, router: router)) return true;
     final route = _parseDeepLinkToRoute(url);
     if (route == null) {
       print('AppInitializer: Failed to parse deep link');
@@ -190,6 +200,59 @@ class AppInitializer {
     }
     appState.setPendingKeyImport(words, seg.length > 1 ? seg[1] : '');
     return true;
+  }
+
+  /// `publicos://link_key/<base64url of the 32 raw key bytes>`: another
+  /// phone's keychain QR, "Add to another inbox" (the key handoff).
+  /// Not a route: the key never enters the router or a log. It
+  /// is parked in memory until an account is signed in, then handed to the
+  /// Inbox IDs page, which asks which inbox to add it to and zeroes it.
+  /// True = the link was this kind.
+  bool _takeKeyLinkLink(String url, {required GoRouter router}) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme != 'publicos' || uri.host != 'link_key') {
+      return false;
+    }
+    final seg = uri.pathSegments;
+    Uint8List? key;
+    try {
+      if (seg.isNotEmpty) {
+        key = base64Url.decode(base64Url.normalize(seg[0]));
+      }
+    } catch (_) {}
+    if (key == null || key.length != 32) {
+      print('AppInitializer: link_key link is not a key');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = router.routerDelegate.navigatorKey.currentContext;
+        if (ctx == null) return;
+        ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(SnackBar(
+          content: Text(ctx.l10n.linkKeyInvalid),
+          behavior: SnackBarBehavior.floating,
+        ));
+      });
+      return true;
+    }
+    appState.setPendingKeyLink(key);
+    _openPendingKeyLink(router);
+    return true;
+  }
+
+  /// Hand a parked link_key key to the Inbox IDs page once an account is
+  /// signed in. Called on arrival and on every app-state change (sign-in).
+  void _openPendingKeyLink(GoRouter router) {
+    if (!appState.accountSelected) return;
+    final key = appState.takePendingKeyLink();
+    if (key == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = router.routerDelegate.navigatorKey.currentState;
+      if (nav == null) {
+        key.fillRange(0, key.length, 0);
+        return;
+      }
+      nav.push(CupertinoPageRoute(
+        builder: (_) => ManageInboxIdsPage(linkKey: key),
+      ));
+    });
   }
 
   /// A `/publicosAddress/<address>[/<type>[/<key>]]` link for the profile the

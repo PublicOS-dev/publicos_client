@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -156,6 +157,23 @@ class AppStateNotifier extends ChangeNotifier {
     return p;
   }
 
+  /// A `publicos://link_key/<key>` link (another phone's keychain QR, the key
+  /// handoff): the raw key, held until an account is signed in and the Inbox
+  /// IDs page takes it. Memory only; taking it clears it, [reset] zeroes it.
+  Uint8List? _pendingKeyLink;
+
+  void setPendingKeyLink(Uint8List key) {
+    _pendingKeyLink?.fillRange(0, _pendingKeyLink!.length, 0);
+    _pendingKeyLink = key;
+    notifyListeners();
+  }
+
+  Uint8List? takePendingKeyLink() {
+    final k = _pendingKeyLink;
+    _pendingKeyLink = null;
+    return k;
+  }
+
   String? consumePendingRoute() {
     final route = _pendingRoute;
     final forAccount = _pendingForAccount;
@@ -192,6 +210,8 @@ class AppStateNotifier extends ChangeNotifier {
     _autoLoginPending = false;
     _pendingRoute = null;
     _pendingForAccount = null;
+    _pendingKeyLink?.fillRange(0, _pendingKeyLink!.length, 0);
+    _pendingKeyLink = null;
     _loadingMessage = null;
     _errorMessage = null;
     _onRetry = null;

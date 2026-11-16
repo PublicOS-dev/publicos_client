@@ -48,7 +48,6 @@ class _XMTPSettingsSheetState extends State<XMTPSettingsSheet> {
     final record = Record.asSettings(
       key: 'read_receipt_send',
       value: value.toString(),
-      expiration: DateTime.now().add(const Duration(days: 365)),
       isExpired: false,
       isSystem: true,
     );
@@ -60,7 +59,6 @@ class _XMTPSettingsSheetState extends State<XMTPSettingsSheet> {
     final record = Record.asSettings(
       key: 'read_receipt_display',
       value: value.toString(),
-      expiration: DateTime.now().add(const Duration(days: 365)),
       isExpired: false,
       isSystem: true,
     );

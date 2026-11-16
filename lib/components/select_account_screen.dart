@@ -1968,8 +1968,6 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> {
                                           value: ThemeProvider.amberAccent.value
                                               .toString(),
                                           isSystem: true,
-                                          expiration: DateTime.now()
-                                              .add(const Duration(days: 365)),
                                           opacity: 1.0,
                                         ),
                                         Record.asSettings(
@@ -1977,8 +1975,6 @@ class _SelectAccountScreenState extends State<SelectAccountScreen> {
                                           value:
                                               'https://feeds.publicos.dev/media/4c12b94b.1794777687.png',
                                           isSystem: true,
-                                          expiration: DateTime.now()
-                                              .add(const Duration(days: 365)),
                                           opacity: 1.0,
                                         ),
                                       ],

@@ -199,7 +199,6 @@ class _ProfilePageState extends State<ProfilePage> {
         record: Record.asProfile(
           key: 'profile.bio',
           value: desc,
-          expiration: DateTime.now().add(const Duration(days: 365)),
           // BioDisplayWidget's `record.bioTextColor ?? Colors.white` fallback is
           // dead — the getter returns transparent (not null) when unset — so the
           // text renders invisible without an explicit colour. Person bios set
@@ -266,7 +265,6 @@ class _ProfilePageState extends State<ProfilePage> {
         Record.asProfile(
           key: "profile.bio",
           value: context.l10n.profilePageBioPlaceholder,
-          expiration: DateTime.now().add(const Duration(days: 365)),
           icon: Icons.person_rounded.codePoint,
           customMetadataAttributes: {
             'bioTextColor': Colors.white.value,
@@ -341,7 +339,7 @@ class _ProfilePageState extends State<ProfilePage> {
           _contact!.publicosAddress!,
           key: recordToUpdate.key,
           value: jsonEncode(recordToUpdate.toChainValue()),
-          expiration: BigInt.from(recordToUpdate.expiration.millisecondsSinceEpoch),
+          expiration: recordToUpdate.chainExpiration,
           recordType: BigInt.from(recordToUpdate.type.index),
           customType: recordToUpdate.subtype ?? '',
         );
@@ -686,7 +684,6 @@ class _ProfilePageState extends State<ProfilePage> {
       key: 'settings.social_display',
       value: rich ? 'rich' : 'icon',
       isSystem: false,
-      expiration: DateTime.now().add(const Duration(days: 3650)),
     );
     _updateRecord(record);
   }

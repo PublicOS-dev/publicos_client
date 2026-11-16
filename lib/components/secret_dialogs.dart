@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/theme/glass_theme.dart';
@@ -126,7 +129,157 @@ Future<void> showExportKeyDialog(
   );
 }
 
-Future<bool?> _showExportWarningDialog(BuildContext context) {
+/// The keychain's "Add to another inbox" (the QR key handoff): a heavy
+/// warning gate, then the key itself as a
+/// `publicos://link_key/<base64url of the 32 raw bytes>` QR. The other
+/// phone's camera opens it in PublicOS, which asks which inbox to add the
+/// key to and keeps nothing (`AppInitializer._takeKeyLinkLink` →
+/// `ManageInboxIdsPage(linkKey:)`). The QR IS the key: no encryption, no
+/// target; the warnings carry the weight.
+Future<void> showKeyQrDialog(
+  BuildContext context, {
+  required Uint8List privateKey,
+  String keyLabel = '',
+}) async {
+  final ack = await _showExportWarningDialog(
+    context,
+    title: context.l10n.keyQrWarningTitle,
+    body: context.l10n.keyQrWarningBody,
+  );
+  if (ack != true || !context.mounted) return;
+  final link =
+      'publicos://link_key/${base64Url.encode(privateKey).replaceAll('=', '')}';
+  // No screenshots or recordings while THIS QR is up. Only this one: the
+  // other QRs are meant to be captured and shared.
+  await _setSecureScreen(true);
+  try {
+    if (!context.mounted) return;
+    await _showKeyQr(context, link, keyLabel);
+  } finally {
+    await _setSecureScreen(false);
+  }
+}
+
+const _secureScreen = MethodChannel('com.publicos/secure_screen');
+
+/// Android FLAG_SECURE / iOS secure-layer capture blanking (MainActivity.kt,
+/// AppDelegate.swift). A no-op everywhere else.
+Future<void> _setSecureScreen(bool on) async {
+  if (kIsWeb ||
+      (defaultTargetPlatform != TargetPlatform.android &&
+          defaultTargetPlatform != TargetPlatform.iOS)) {
+    return;
+  }
+  try {
+    await _secureScreen.invokeMethod(on ? 'enable' : 'disable');
+  } catch (_) {
+    // An older native build without the channel: the warnings still stand.
+  }
+}
+
+Future<void> _showKeyQr(BuildContext context, String link, String keyLabel) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) {
+      final tokens = GlassTokens.of(ctx);
+      return Dialog(
+        constraints: const BoxConstraints(
+            minWidth: DialogWidth.min, maxWidth: DialogWidth.s),
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration:
+              GlassTheme.glassBox(ctx).copyWith(color: tokens.surfaceDeep),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                ctx.l10n.keyQrTitle(keyLabel.toUpperCase()),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                  color: tokens.starkWhite,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      color: tokens.fallbackAccent, size: 16),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      ctx.l10n.keyQrNeverShare,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: tokens.fallbackAccent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Center(
+                child: QrImageView(
+                  data: link,
+                  version: QrVersions.auto,
+                  size: 220,
+                  backgroundColor: Colors.transparent,
+                  eyeStyle: QrEyeStyle(
+                    eyeShape: QrEyeShape.circle,
+                    color: tokens.starkWhite,
+                  ),
+                  dataModuleStyle: QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.circle,
+                    color: tokens.starkWhite,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                ctx.l10n.keyQrInstructions,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: tokens.textDim,
+                  fontSize: 12,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tokens.starkWhite,
+                  foregroundColor: tokens.background,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  ctx.l10n.secretDialogsDone,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+Future<bool?> _showExportWarningDialog(
+  BuildContext context, {
+  String? title,
+  String? body,
+}) {
   return showDialog<bool>(
     context: context,
     barrierDismissible: true,
@@ -153,7 +306,7 @@ Future<bool?> _showExportWarningDialog(BuildContext context) {
               ),
               const SizedBox(height: 14),
               Text(
-                ctx.l10n.secretDialogsShowSecret,
+                title ?? ctx.l10n.secretDialogsShowSecret,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16,
@@ -164,7 +317,7 @@ Future<bool?> _showExportWarningDialog(BuildContext context) {
               ),
               const SizedBox(height: 12),
               Text(
-                ctx.l10n.secretDialogsExportWarning,
+                body ?? ctx.l10n.secretDialogsExportWarning,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: tokens.textDim,

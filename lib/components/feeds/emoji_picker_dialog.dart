@@ -1614,7 +1614,6 @@ Future<void> _recordUse(String emoji) async {
         key: _historyKey,
         value: jsonEncode(counts),
         // A habit, not a cache: it doesn't age out.
-        expiration: DateTime.now().add(const Duration(days: 36500)),
         isExpired: false,
         isSystem: true,
       ),

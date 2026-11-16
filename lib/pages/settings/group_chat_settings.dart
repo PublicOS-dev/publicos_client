@@ -575,7 +575,6 @@ class _GroupChatSettingsState extends State<GroupChatSettings> {
               Record.asProfile(
                 key: 'profile.avatar',
                 value: conv.groupImageUrl!,
-                expiration: DateTime.now().add(const Duration(days: 365)),
               )
             ]
           : const [],

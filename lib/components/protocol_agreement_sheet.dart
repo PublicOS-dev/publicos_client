@@ -160,8 +160,14 @@ class _ProtocolAgreementSheetState extends State<ProtocolAgreementSheet> {
 }
 
 /// The reading pane shared by the mobile sheet and the desktop dialog: lead,
-/// version, the bordered scrolling text, and the earned ACCEPT button.
-class ProtocolAgreementReader extends StatelessWidget {
+/// version, the bordered scrolling text, the age box, and the earned ACCEPT
+/// button.
+///
+/// The age box is a checkbox for the minimum age alone: protocol agreement
+/// v2 clause 3 sets 16 and old enough under local law. ACCEPT stays disabled
+/// until the box is ticked, so nobody signs the age clause by scrolling past
+/// it.
+class ProtocolAgreementReader extends StatefulWidget {
   final ({BigInt version, String text}) agreement;
   final ScrollController scroll;
   final bool reachedEnd;
@@ -176,9 +182,20 @@ class ProtocolAgreementReader extends StatelessWidget {
   });
 
   @override
+  State<ProtocolAgreementReader> createState() =>
+      _ProtocolAgreementReaderState();
+}
+
+class _ProtocolAgreementReaderState extends State<ProtocolAgreementReader> {
+  bool _ageOk = false;
+
+  @override
   Widget build(BuildContext context) {
     final tokens = GlassTokens.of(context);
     final l10n = context.l10n;
+    final agreement = widget.agreement;
+    final scroll = widget.scroll;
+    final reachedEnd = widget.reachedEnd;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
       child: Column(
@@ -234,16 +251,48 @@ class ProtocolAgreementReader extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
+          // The age box: its own tap target, the whole row toggles it.
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => setState(() => _ageOk = !_ageOk),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    _ageOk
+                        ? Icons.check_box_rounded
+                        : Icons.check_box_outline_blank_rounded,
+                    size: 22,
+                    color: _ageOk ? tokens.starkWhite : tokens.textDim,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      l10n.protocolAgreementAgeCheck,
+                      style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        color: tokens.starkWhite,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           // The button is EARNED by reading; the hint holds its height so
-          // nothing jumps when it appears.
+          // nothing jumps when it appears. Disabled until the age box is ticked.
           SizedBox(
             height: 48,
             child: reachedEnd
                 ? SystemAppActionButton(
                     label: l10n.protocolAgreementAccept,
                     icon: Icons.check_rounded,
-                    onTap: onAccept,
+                    onTap: _ageOk ? widget.onAccept : null,
                   )
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,

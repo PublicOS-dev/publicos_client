@@ -193,7 +193,6 @@ class TranslationPrefs {
         key: kEnabledKey,
         value: value ? 'true' : 'false',
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(kEnabledKey, record);
     } catch (_) {}
@@ -222,7 +221,6 @@ class TranslationPrefs {
         key: kWifiOnlyKey,
         value: value ? 'true' : 'false',
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(kWifiOnlyKey, record);
     } catch (_) {}
@@ -268,7 +266,6 @@ class TranslationPrefs {
         key: kDisabledSourcesKey,
         value: next.toList().join(','),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(kDisabledSourcesKey, record);
     } catch (_) {}
@@ -284,7 +281,6 @@ class TranslationPrefs {
         key: kDisabledSourcesKey,
         value: '',
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(kDisabledSourcesKey, record);
     } catch (_) {}

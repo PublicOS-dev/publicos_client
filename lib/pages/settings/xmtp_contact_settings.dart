@@ -85,7 +85,6 @@ class _XmtpContactSettingsState extends State<XmtpContactSettings> {
         key: 'displayName',
         value: newName,
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
 
       final updatedRecords = List<Record>.from(_contact.records);
@@ -130,7 +129,6 @@ class _XmtpContactSettingsState extends State<XmtpContactSettings> {
         // ignore: deprecated_member_use
         value: color.value.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
 
       final updatedRecords = List<Record>.from(_contact.records);

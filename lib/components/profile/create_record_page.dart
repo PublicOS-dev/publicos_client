@@ -433,7 +433,6 @@ class _CreateRecordSheetState extends State<CreateRecordSheet> {
       key: _selectedPlatform!,
       value: handle,
       link: link,
-      expiration: DateTime.now().add(const Duration(days: 365)),
       customMetadataAttributes: {'name': name, 'order': 0},
     ));
   }
@@ -573,7 +572,6 @@ class _CreateRecordSheetState extends State<CreateRecordSheet> {
       key: _selectedPlatform!,
       value: handle,
       link: link,
-      expiration: DateTime.now().add(const Duration(days: 365)),
       customMetadataAttributes: {'name': name, 'order': 0},
     ));
   }
@@ -985,7 +983,6 @@ class _CreateRecordSheetState extends State<CreateRecordSheet> {
     widget.onPreviewChanged?.call(Record.asProfile(
       key: 'card.$id',
       value: ref.encode(),
-      expiration: DateTime.now().add(const Duration(days: 365)),
       width: _nftCardWidth,
       height: _nftCardHeight,
       noTitle: true,
@@ -1011,7 +1008,6 @@ class _CreateRecordSheetState extends State<CreateRecordSheet> {
     widget.onSave(Record.asProfile(
       key: 'card.$id',
       value: ref.encode(),
-      expiration: DateTime.now().add(const Duration(days: 365)),
       width: _nftCardWidth,
       height: _nftCardHeight,
       noTitle: true,

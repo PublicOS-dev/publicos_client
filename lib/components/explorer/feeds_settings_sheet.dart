@@ -59,7 +59,6 @@ class _RssFeedsSettingsSheetState extends State<RssFeedsSettingsSheet> {
         key: 'rss_feeds_title_text_size',
         value: size.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
 
       await PublicOSSettings.setSetting('rss_feeds_title_text_size', record);
@@ -75,7 +74,6 @@ class _RssFeedsSettingsSheetState extends State<RssFeedsSettingsSheet> {
         key: 'rss_feeds_description_text_size',
         value: size.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
 
       await PublicOSSettings.setSetting('rss_feeds_description_text_size', record);

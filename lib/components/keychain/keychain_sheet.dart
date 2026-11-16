@@ -1060,6 +1060,66 @@ class _KeychainSheetState extends State<KeychainSheet>
     _showSnackBar(context.l10n.keychainAddressCopied);
   }
 
+  /// "Add to another inbox": the key as a QR for the user's other phone
+  /// (the QR key handoff). The bytes are zeroed once the dialog closes.
+  Future<void> _showKeyQr(String label) async {
+    final me = AppStateNotifier.currentMyContact?.publicosAddress?.eip55With0x;
+    if (me == null) {
+      _snackMsg((l) => l.errNoUserAddress);
+      return;
+    }
+    try {
+      final hex = await PublicOSKeychain.exportPrivateKey(me, label);
+      if (hex == null) {
+        _snackMsg((l) => l.keychainPrivKeyNotFound);
+        return;
+      }
+      if (!mounted) return;
+      final bytes = PublicOSKeychain.hexToBytes(hex);
+      try {
+        await showKeyQrDialog(context, privateKey: bytes, keyLabel: label);
+      } finally {
+        bytes.fillRange(0, bytes.length, 0);
+      }
+    } catch (e) {
+      _snackError(e);
+    }
+  }
+
+  bool _refreshingKeys = false;
+
+  Future<void> _refreshKeys() async {
+    if (_refreshingKeys) return;
+    final me = AppStateNotifier.currentMyContact?.publicosAddress?.eip55With0x;
+    if (me == null) {
+      _snackMsg((l) => l.errNoUserAddress);
+      return;
+    }
+    setState(() => _refreshingKeys = true);
+    try {
+      final moved = await PublicOSKeychain.refreshInboxStamps(me);
+      final active = PublicOS.currentXmtpKeyLabel;
+      if (active != null && moved.contains(active) && mounted) {
+        // The running client still talks to the key's OLD inbox: reload it
+        // through the activation gate (it asks before setting up the new
+        // inbox on this device).
+        await activateKeyForXmtp(context, me, active);
+      }
+      await _fetchKeys();
+      await _loadCurrentSelectedKey();
+      _currentClientAddress = PublicOS.clientXmtpAddress;
+      await _checkCurrentInboxIdRegistration();
+      if (!mounted) return;
+      _showSnackBar(moved.isEmpty
+          ? context.l10n.keychainRefreshDone
+          : context.l10n.keychainRefreshMoved(moved.join(', ')));
+    } catch (e) {
+      _snackError(e);
+    } finally {
+      if (mounted) setState(() => _refreshingKeys = false);
+    }
+  }
+
   Future<void> _exportPrivateKeyAsInt(String label) async {
     try {
       final currentUserAddress = AppStateNotifier.currentMyContact?.publicosAddress?.eip55With0x;
@@ -1739,7 +1799,6 @@ class _KeychainSheetState extends State<KeychainSheet>
             key: KeychainSheet.kInboxPromptOffKey,
             value: 'true',
             isSystem: true,
-            expiration: DateTime.now().add(const Duration(days: 3650)),
             isExpired: false,
           ),
         );
@@ -2047,6 +2106,22 @@ class _KeychainSheetState extends State<KeychainSheet>
                     ],
                   ),
                 ),
+                // Refresh: re-reads every key's inbox from the network, so a
+                // key moved to another inbox (the QR handoff) stops showing
+                // its old one, and reloads the active key if it moved.
+                if (widget.type == KeychainType.xmtp)
+                  IconButton(
+                    tooltip: l10n.keychainRefresh,
+                    onPressed: _refreshingKeys ? null : _refreshKeys,
+                    icon: _refreshingKeys
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: PixelRainLoadingWidget(size: 20),
+                          )
+                        : Icon(Icons.refresh_rounded,
+                            color: tokens.starkWhite, size: 22),
+                  ),
                 Icon(
                   Icons.vpn_key,
                   color: theme.colorScheme.primary,
@@ -2696,6 +2771,14 @@ class _KeychainSheetState extends State<KeychainSheet>
             onTap: () => _exportPrivateKeyAsInt(label),
             tokens: tokens,
           ),
+          if (widget.type == KeychainType.xmtp)
+            _KeychainActionRow(
+              icon: Icons.qr_code_2_rounded,
+              label: context.l10n.keychainActionAddToInbox,
+              subtitle: context.l10n.keychainActionAddToInboxSub,
+              onTap: () => _showKeyQr(label),
+              tokens: tokens,
+            ),
           _KeychainActionRow(
             icon: Icons.delete_outline_rounded,
             label: context.l10n.keychainActionDelete,

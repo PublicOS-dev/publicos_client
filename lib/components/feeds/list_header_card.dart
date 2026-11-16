@@ -510,12 +510,17 @@ class ListMiniStack extends StatelessWidget {
   /// ([ListMiniStackFlyIn] moves them one by one).
   final Widget Function(int index, Widget tile)? tileWrap;
 
+  /// 1 = the header's size; the add-to-lists sheet draws it smaller as a
+  /// list row's subtitle.
+  final double scale;
+
   const ListMiniStack({
     super.key,
     required this.summary,
     required this.tokens,
     required this.onTap,
     this.tileWrap,
+    this.scale = 1,
   });
 
   /// How many icons the stack draws for [summary].
@@ -537,7 +542,7 @@ class ListMiniStack extends StatelessWidget {
             MembersStack(
               tokens: tokens,
               contacts: summary.people,
-              scale: 30 / 36,
+              scale: 30 / 36 * scale,
               shrinkWrap: true,
               onTap: onTap,
               tileWrap: wrap,
@@ -547,6 +552,7 @@ class ListMiniStack extends StatelessWidget {
           if (summary.feeds.isNotEmpty)
             _FaviconStack(
               feeds: summary.feeds,
+              scale: scale,
               tileWrap: wrap == null
                   ? null
                   : (i, tile) => wrap(peopleTiles + i, tile),
@@ -698,11 +704,15 @@ class _ListMiniStackFlyInState extends State<ListMiniStackFlyIn>
 class _FaviconStack extends StatelessWidget {
   final List<ListFeed> feeds;
   final Widget Function(int index, Widget tile)? tileWrap;
-  const _FaviconStack({required this.feeds, this.tileWrap});
+  final double scale;
+  const _FaviconStack({required this.feeds, this.tileWrap, this.scale = 1});
 
-  static const _size = 20.0;
-  static const _stride = 13.0;
+  static const _baseSize = 20.0;
+  static const _baseStride = 13.0;
   static const _max = 4;
+
+  double get _size => _baseSize * scale;
+  double get _stride => _baseStride * scale;
 
   @override
   Widget build(BuildContext context) {

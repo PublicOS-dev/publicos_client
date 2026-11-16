@@ -155,7 +155,6 @@ class _UserAccountSettingsState extends State<UserAccountSettings> {
         key: 'color',
         value: color.value.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSContacts.setRecord(record);
       if (!mounted) return;

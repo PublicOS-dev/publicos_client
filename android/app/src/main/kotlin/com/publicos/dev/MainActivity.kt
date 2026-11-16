@@ -31,6 +31,30 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        // Screenshot blocking for ONE screen: the keychain's key QR ("Add to
+        // another inbox"). FLAG_SECURE on while that
+        // QR is open: screenshots and recordings are refused and the
+        // recents thumbnail is blank. Every other QR stays capturable on
+        // purpose (the user shares them).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.publicos/secure_screen")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "enable" -> {
+                        runOnUiThread {
+                            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                        result.success(true)
+                    }
+                    "disable" -> {
+                        runOnUiThread {
+                            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
         // "Open with" for received documents — hand a cached file to the user's
         // chosen app via ACTION_VIEW. The file is exposed through a FileProvider
         // (content:// URI) because file:// URIs are blocked on Android 7+.

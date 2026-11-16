@@ -3,6 +3,7 @@ import 'package:publicos_core/publicos_core.dart';
 
 import 'package:publicos_client/components/feeds/edit_list_sheet.dart';
 import 'package:publicos_client/components/feeds/feed_favicon.dart';
+import 'package:publicos_client/components/feeds/list_header_card.dart';
 import 'package:publicos_client/components/glass_contact_icon.dart';
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/router_helpers.dart';
@@ -98,6 +99,10 @@ class _AddToListsSheetState extends State<_AddToListsSheet> {
   /// listId → feed count for display
   final Map<int, int> _feedCount = {};
 
+  /// Who each list follows, people + feeds, for its row: a feed count alone
+  /// would say "1 feed" for a list that also follows 2 people.
+  final Map<int, ListFollowSummary> _summaries = {};
+
   /// The single-flagged list currently containing this feed (if any).
   /// Drives the single-follow row's affordance: null → `+`, non-null → `x`.
   FeedList? _existingSingle;
@@ -127,6 +132,7 @@ class _AddToListsSheetState extends State<_AddToListsSheet> {
       final initial = <int, bool>{};
       _feedIdInList.clear();
       _feedCount.clear();
+      _summaries.clear();
 
       // Every multi-feed list is a valid target. Only `is_single` lists are
       // excluded: a single IS one feed rendered as itself, so adding a second
@@ -150,6 +156,7 @@ class _AddToListsSheetState extends State<_AddToListsSheet> {
       for (final list in multiLists) {
         final feeds = await PublicOSFeedLists.getFeedsInList(list.id);
         _feedCount[list.id] = feeds.length;
+        _summaries[list.id] = await ListFollowSummary.load(list.id);
         if (_accountMode) {
           initial[list.id] = accountLists.contains(list.id);
           continue;
@@ -543,6 +550,7 @@ class _AddToListsSheetState extends State<_AddToListsSheet> {
                               return _ListRow(
                                 list: list,
                                 feedCount: _feedCount[list.id] ?? 0,
+                                summary: _summaries[list.id],
                                 checked: checked,
                                 enabled: !_saving,
                                 onTap: () => setState(() {
@@ -763,6 +771,10 @@ class _SheetViaLine extends StatelessWidget {
 class _ListRow extends StatelessWidget {
   final FeedList list;
   final int feedCount;
+
+  /// People + feeds the list follows; null while loading (the feed count
+  /// shows meanwhile).
+  final ListFollowSummary? summary;
   final bool checked;
   final bool enabled;
   final VoidCallback onTap;
@@ -770,10 +782,50 @@ class _ListRow extends StatelessWidget {
   const _ListRow({
     required this.list,
     required this.feedCount,
+    this.summary,
     required this.checked,
     required this.enabled,
     required this.onTap,
   });
+
+  /// The header's mini stack, smaller, then the counts: the people this list
+  /// follows and its feeds, as `[icons][count]`.
+  Widget _subtitle(BuildContext context, GlassTokens tokens) {
+    final s = summary;
+    final style = TextStyle(color: tokens.textDim, fontSize: 12);
+    if (s == null) {
+      return Text(context.l10n.addToListsSheetFeedCount(feedCount),
+          style: style);
+    }
+    if (s.isEmpty) return Text(context.l10n.listHeaderEmpty, style: style);
+    final l10n = context.l10n;
+    final counts = [
+      if (s.people.isNotEmpty)
+        '${s.people.length} ${l10n.listHeaderPeopleWord(s.people.length)}',
+      if (s.feeds.isNotEmpty)
+        '${s.feeds.length} ${l10n.listHeaderFeedsWord(s.feeds.length)}',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          ListMiniStack(
+            summary: s,
+            tokens: tokens,
+            scale: 0.7,
+            onTap: () {
+              if (enabled) onTap();
+            },
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(counts,
+                style: style, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -809,13 +861,7 @@ class _ListRow extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Text(
-                    context.l10n.addToListsSheetFeedCount(feedCount),
-                    style: TextStyle(
-                      color: tokens.textDim,
-                      fontSize: 12,
-                    ),
-                  ),
+                  _subtitle(context, tokens),
                 ],
               ),
             ),

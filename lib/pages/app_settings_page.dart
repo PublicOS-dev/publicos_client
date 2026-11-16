@@ -523,7 +523,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                 key: record.key,
                 value: recordValueJson,
                 expiration:
-                    BigInt.from(record.expiration.millisecondsSinceEpoch),
+                    record.chainExpiration,
                 recordType: BigInt.from(record.type.index),
                 customType: customTypeStr,
               ),
@@ -1779,7 +1779,6 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
           // Stored inverted: the key means "never ask".
           value: (!offer).toString(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 3650)),
           isExpired: false,
         ),
       );

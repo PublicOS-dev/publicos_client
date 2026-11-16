@@ -1235,7 +1235,9 @@
   "inboxIdsEmptySubtitle": "Create an XMTP key from the keychain to get started.",
   "inboxIdsNoLocalKeyTitle": "No local key on this device",
   "inboxIdsNoLocalKeyBody": "This inbox is registered on your account but no private key for it lives on this device, so we can't load identities or installations. Import the key from another device (keychain or mnemonic) to manage it here.",
-  "inboxIdsLinkedAccounts": "Linked accounts",
+  "inboxIdsNotSetUpTitle": "Not set up on this device",
+  "inboxIdsNotSetUpBody": "This key is on this device, but it isn't set up for messages here, so its inbox can't be shown. Select the key in the keychain to set it up.",
+  "inboxIdsLinkedAccounts": "Linked keys",
   "inboxIdsInstallations": "Installations",
   "inboxIdsQuickActions": "Quick actions",
   "inboxIdsRecoveryBadge": "RECOVERY",
@@ -1386,16 +1388,77 @@
   "inboxIdsHintMnemonic": "word1 word2 word3 …",
   "inboxIdsMethodPrivateKeySubtitle": "Hex-encoded private key",
   "inboxIdsMethodMnemonicSubtitle": "12 or 24 word recovery phrase",
-  "inboxIdsAddAccountTitle": "ADD ACCOUNT",
-  "inboxIdsAddAccountSubtitle": "Link an additional wallet to this inbox.",
+  "inboxIdsAddAccountTitle": "ADD KEY",
+  "inboxIdsAddAccountSubtitle": "Link another key to this inbox.",
   "inboxIdsMethodImportKeyTitle": "Import key",
   "inboxIdsMethodImportKeySubtitle": "Import from mnemonic or private key",
+  "inboxIdsMethodQrTitle": "QR from another phone",
+  "inboxIdsMethodQrSubtitle": "On the phone that holds the key: Keychain, open the key, Add to another inbox. Then scan its QR with this phone's camera.",
+  "linkKeyPickInboxTitle": "ADD {address} TO WHICH INBOX?",
+  "@linkKeyPickInboxTitle": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "linkKeyNoInboxes": "This phone has no inbox to add the key to.",
+  "linkKeyConfirmTitle": "ADD KEY",
+  "linkKeyConfirmBody": "Are you sure you want to add {address} to inbox {inbox}?",
+  "@linkKeyConfirmBody": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      },
+      "inbox": {
+        "type": "String"
+      }
+    }
+  },
+  "linkKeyAddedTitle": "KEY ADDED",
+  "linkKeyAddedBody": "{address} is now part of inbox {inbox}. This phone did not keep the key.\n\nOn the phone that showed the QR, open the keychain and tap Refresh.",
+  "@linkKeyAddedBody": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      },
+      "inbox": {
+        "type": "String"
+      }
+    }
+  },
+  "linkKeyInvalid": "This QR does not carry a valid key.",
+  "linkKeyAdd": "Add",
+  "keychainActionAddToInbox": "Add to another inbox",
+  "keychainActionAddToInboxSub": "Show this key as a QR, to scan with your other phone and add it to an inbox there.",
+  "keyQrWarningTitle": "THIS QR IS YOUR KEY",
+  "keyQrWarningBody": "The QR carries this key itself. Anyone who scans it, or sees a photo of it, gets your key.\n\nDo not let anyone else see it. Do not take a photo or a screenshot of it, and do not share it. Scan it only with your own phone.\n\nIf this key is linked to another inbox, adding it to a new one moves it: the old inbox loses this key and the conversations it reached through it.",
+  "keyQrTitle": "ADD {label} TO ANOTHER INBOX",
+  "@keyQrTitle": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "keyQrInstructions": "Scan this with your other phone's camera. PublicOS opens there and asks which inbox to add the key to. Then tap Refresh in this keychain.",
+  "keyQrNeverShare": "Never let anyone else see this QR.",
+  "keychainRefresh": "Refresh keys",
+  "keychainRefreshDone": "Keys refreshed",
+  "keychainRefreshMoved": "{labels} moved to another inbox",
+  "@keychainRefreshMoved": {
+    "placeholders": {
+      "labels": {
+        "type": "String"
+      }
+    }
+  },
   "inboxIdsImportKeyTitle": "IMPORT KEY",
   "inboxIdsMethodMnemonicPhraseTitle": "Mnemonic phrase",
   "inboxIdsMethodPrivateKeyOptTitle": "Private key",
   "inboxIdsActionRegisterToProfile": "Register to profile",
   "inboxIdsActionRenameLabel": "Rename label",
-  "inboxIdsActionAddAccount": "Add account",
+  "inboxIdsActionAddAccount": "Add key",
   "inboxIdsActionSyncing": "Syncing…",
   "inboxIdsActionSyncConsent": "Sync consent",
   "inboxIdsActionRequesting": "Requesting…",
@@ -1431,8 +1494,8 @@
   "inboxIdsNoInstallationsToRevoke": "No installations to revoke",
   "inboxIdsUserAddressUnavailable": "User address not available",
   "inboxIdsNoAvailableKeys": "No available keys in keychain",
-  "inboxIdsAccountAdded": "Account added",
-  "inboxIdsAccountAddFailed": "Failed to add account",
+  "inboxIdsAccountAdded": "Key added",
+  "inboxIdsAccountAddFailed": "Failed to add key",
   "inboxIdsErrorInvalidKeyFormat": "Error: invalid key format",
   "postCardTranslating": "Translating…",
   "postCardWaitingForWifi": "Waiting for Wi-Fi…",
@@ -1629,6 +1692,7 @@
   "@protocolAgreementVersion": {"placeholders": {"version": {"type": "String"}}},
   "protocolAgreementScrollHint": "Scroll to the end to accept",
   "protocolAgreementAccept": "ACCEPT AND CONTINUE",
+  "protocolAgreementAgeCheck": "I am 16 or older, and old enough where I live to accept this on my own.",
   "protocolAgreementLoadFailed": "The agreement could not be loaded. Check your connection and try again.",
   "noticeServicesRow": "Send SSP notice",
   "noticeTitle": "Send SSP notice",
@@ -3097,6 +3161,7 @@
   "messagesChipBarSettings": "Settings",
   "reactionDetailsSheetTitle": "Reactions",
   "reactionDetailsSheetRemoveFailed": "Failed to remove reaction",
+  "reactionDetailsSheetAddFailed": "Failed to add reaction",
   "reactionDetailsSheetNoReactions": "No reactions yet.",
   "reactionDetailsSheetLoadFailed": "Couldn't load who reacted.",
   "reactionDetailsSheetAllTab": "All",
@@ -3543,6 +3608,23 @@
   "historySheetStatusFailed": "failed",
   "historySheetEmptyTitle": "No past actions",
   "historySheetEmptyBody": "Past proposals will appear here once any are executed, cancelled, or expired.",
+  "historySheetNoVotesWeeks": "{count, plural, =1{No votes this last week} other{No votes in the last {count} weeks}}",
+  "@historySheetNoVotesWeeks": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historySheetWindow": "{count, plural, =1{last week} other{last {count} weeks}}",
+  "@historySheetWindow": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "historySheetLoadWeekBefore": "Load the week before",
   "membersSheetRemoveTitle": "Remove member?",
   "membersSheetRemoveBody": "Start a vote to remove {name} from this group?",
   "@membersSheetRemoveBody": {
@@ -7594,6 +7676,12 @@
   },
   "exploreEmptyTitle": "Nothing trending yet",
   "exploreEmptySubtitle": "Every 10 minutes the servers on the network agree on what is being read most. Pull down to check again.",
+  "feedsNavigationDrawerSectionExplore": "EXPLORE",
+  "exploreHotPosts": "Hot posts",
+  "exploreHotFeeds": "Hot feeds",
+  "exploreLatestPosts": "Latest posts",
+  "exploreLatestEmptyTitle": "Nothing new yet",
+  "exploreLatestEmptySubtitle": "The newest public posts from across the network show here, refreshed every 10 minutes. Pull down to check again.",
   "matureGateTitle": "Mature content",
   "@matureGateTitle": { "description": "Title of the dialog shown before opening a profile whose owner marked it as mature content." },
   "matureGateBody": "This profile contains mature content. Are you 18 or older and want to go on?",

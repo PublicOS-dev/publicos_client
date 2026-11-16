@@ -336,7 +336,6 @@ class _ExplorerState extends State<Explorer>
           key: flag,
           value: 'true',
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 3650)),
           isExpired: false,
         ),
       );

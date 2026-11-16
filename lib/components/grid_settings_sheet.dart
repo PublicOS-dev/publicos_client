@@ -251,7 +251,6 @@ class _GridSettingsSheetState extends State<_GridSettingsSheet> {
         key: _gridSizeKey,
         value: size.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_gridSizeKey, record);
     } catch (_) {}
@@ -263,7 +262,6 @@ class _GridSettingsSheetState extends State<_GridSettingsSheet> {
         key: _textSizeKey,
         value: size.name,
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_textSizeKey, record);
     } catch (_) {}
@@ -275,7 +273,6 @@ class _GridSettingsSheetState extends State<_GridSettingsSheet> {
         key: _contactsLayoutKey,
         value: layout.name,
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_contactsLayoutKey, record);
     } catch (_) {}
@@ -287,7 +284,6 @@ class _GridSettingsSheetState extends State<_GridSettingsSheet> {
         key: _contactsShowBannerKey,
         value: value.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_contactsShowBannerKey, record);
     } catch (_) {}

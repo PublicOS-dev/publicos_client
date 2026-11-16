@@ -95,7 +95,58 @@ import FirebaseMessaging
             }
         }
 
+        // Screenshot blocking for ONE screen: the keychain's key QR ("Add to
+        // another inbox"). Other QRs stay capturable.
+        let secureChannel = FlutterMethodChannel(
+            name: "com.publicos/secure_screen",
+            binaryMessenger: controller.binaryMessenger
+        )
+        secureChannel.setMethodCallHandler { [weak self] call, result in
+            switch call.method {
+            case "enable":
+                self?.setSecureScreen(true)
+                result(true)
+            case "disable":
+                self?.setSecureScreen(false)
+                result(true)
+            default:
+                result(FlutterMethodNotImplemented)
+            }
+        }
+
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    }
+
+    /// iOS has no "block screenshots" switch. The known way to keep content
+    /// out of screenshots and recordings is the secure text field's layer:
+    /// whatever is drawn inside it comes out blank in a capture while
+    /// isSecureTextEntry is on (the trick password fields rely on). The first
+    /// enable moves the window's layer into a hidden secure field once; after
+    /// that, on/off is just the field's isSecureTextEntry.
+    private var secureField: UITextField?
+
+    private func setSecureScreen(_ on: Bool) {
+        guard let window = window else { return }
+        if secureField == nil {
+            if !on { return }
+            let field = UITextField()
+            field.isSecureTextEntry = true
+            field.isUserInteractionEnabled = false
+            field.translatesAutoresizingMaskIntoConstraints = false
+            window.addSubview(field)
+            field.centerXAnchor.constraint(equalTo: window.centerXAnchor).isActive = true
+            field.centerYAnchor.constraint(equalTo: window.centerYAnchor).isActive = true
+            window.layer.superlayer?.addSublayer(field.layer)
+            // The secure container is the field's first sublayer before
+            // iOS 17 and its last from iOS 17 on.
+            if #available(iOS 17.0, *) {
+                field.layer.sublayers?.last?.addSublayer(window.layer)
+            } else {
+                field.layer.sublayers?.first?.addSublayer(window.layer)
+            }
+            secureField = field
+        }
+        secureField?.isSecureTextEntry = on
     }
 
     // Warm-start custom scheme handler

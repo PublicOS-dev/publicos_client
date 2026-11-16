@@ -259,7 +259,6 @@ class _FeedsSettingsSheetState extends State<_FeedsSettingsSheet> {
         key: _titleKey,
         value: size.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_titleKey, record);
     } catch (_) {}
@@ -271,7 +270,6 @@ class _FeedsSettingsSheetState extends State<_FeedsSettingsSheet> {
         key: _bodyKey,
         value: size.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_bodyKey, record);
     } catch (_) {}
@@ -285,7 +283,6 @@ class _FeedsSettingsSheetState extends State<_FeedsSettingsSheet> {
         key: _trimKey,
         value: chars.toString(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_trimKey, record);
     } catch (_) {}
@@ -297,7 +294,6 @@ class _FeedsSettingsSheetState extends State<_FeedsSettingsSheet> {
         key: _layoutKey,
         value: mode.name,
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       );
       await PublicOSSettings.setSetting(_layoutKey, record);
     } catch (_) {}
@@ -313,7 +309,6 @@ class _FeedsSettingsSheetState extends State<_FeedsSettingsSheet> {
           key: _swipeSnapOnKey,
           value: on.toString(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 365)),
         ),
       );
     } catch (_) {}
@@ -329,7 +324,6 @@ class _FeedsSettingsSheetState extends State<_FeedsSettingsSheet> {
           key: _swipeSnapKey,
           value: ms.round().toString(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 365)),
         ),
       );
     } catch (_) {}

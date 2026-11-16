@@ -76,7 +76,6 @@ class _MessagesSettingsSheetState extends State<_MessagesSettingsSheet> {
     final record = Record.asSettings(
       key: key,
       value: value.toString(),
-      expiration: DateTime.now().add(const Duration(days: 365)),
       isExpired: false,
       isSystem: true,
     );
