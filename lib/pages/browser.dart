@@ -8,6 +8,7 @@ import 'dart:io' show Platform;
 import 'dart:ui' show ImageFilter;
 import 'package:publicos_core/publicos_core.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:publicos_client/components/feeds/add_to_lists_sheet.dart';
@@ -1098,11 +1099,12 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
     }
   }
 
-  /// Returns [c] with `Contact.createdAt` filled from chain when it was null —
-  /// an immutable value, fetched once and never refetched. Pure: no setState,
-  /// no save. Failures return [c] unchanged (future visits retry).
+  /// Returns [c] with `Contact.createdAt` read from chain. The stored value
+  /// is what the profile shows while this runs; it is replaced only when the
+  /// chain answers with a different date (fetched once and never
+  /// refetched, a stale date could never correct itself). Pure: no
+  /// setState, no save. A failed or empty read returns [c] unchanged.
   Future<Contact> _withCreatedAt(Contact c) async {
-    if (c.createdAt != null) return c;
     final addr = c.publicosAddress;
     if (addr == null) return c;
     try {
@@ -1110,7 +1112,10 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
         addr,
         isOrg: c.isOrgAccount,
       );
-      return created != null ? c.copyWith(createdAt: created) : c;
+      if (created == null) return c;
+      final held = c.createdAt;
+      if (held != null && held.isAtSameMomentAs(created)) return c;
+      return c.copyWith(createdAt: created);
     } catch (_) {
       return c;
     }
@@ -1415,6 +1420,10 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
 
       // Merge with local data (keep conversation topic, group status, etc.)
       var mergedContact = localContact.copyWith(
+        // An account's shown name is the chain's (fetchContact re-derives it
+        // on every read); without this a renamed account kept its old name
+        // on its own profile and the save below re-staled the DB row.
+        displayName: freshContact.displayName,
         records: freshContact.records,
         publicosDisplayName: freshContact.publicosDisplayName ??
             localContact.publicosDisplayName,
@@ -1443,8 +1452,9 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
 
       // Fold the lazy enrichments in here so this whole sync is a single
       // _contact mutation (one setState below) — no separate tail setState
-      // calls, each of which re-triggered ProfilePage. createdAt is immutable
-      // (fetched once); isCitizen re-checks while not true.
+      // calls, each of which re-triggered ProfilePage. createdAt keeps the
+      // stored date unless the chain returns a different one; isCitizen
+      // re-checks while not true.
       mergedContact = await _withCreatedAt(mergedContact);
       mergedContact = await _withCitizenship(mergedContact);
 
@@ -4447,6 +4457,15 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
     if (_matureAskingFor == key) return;
     _matureAskingFor = key;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // iOS: mature profiles are not shown at all for now.
+      // Apple 1.2 allows them only when the turn-on happens on a website;
+      // until that website flow exists, iOS gets a "not on iPhone yet" note
+      // and goes back. A stored yes from another platform is ignored here.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        await _askMatureGate(iosBlocked: true);
+        if (mounted) Navigator.of(context).maybePop();
+        return;
+      }
       final settingKey = 'mature_ok.$key';
       var ok = false;
       try {
@@ -4473,7 +4492,7 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
     });
   }
 
-  Future<bool?> _askMatureGate() {
+  Future<bool?> _askMatureGate({bool iosBlocked = false}) {
     final tokens = GlassTokens.of(context);
     final l10n = context.l10n;
     return showDialog<bool>(
@@ -4493,7 +4512,7 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
           ),
         ),
         content: Text(
-          l10n.matureGateBody,
+          iosBlocked ? l10n.matureGateIosBody : l10n.matureGateBody,
           style: TextStyle(
             fontFamily: 'SpaceGrotesk',
             color: tokens.textDim,
@@ -4513,7 +4532,7 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
               ),
             ),
           ),
-          TextButton(
+          if (!iosBlocked) TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
               l10n.matureGateContinue,

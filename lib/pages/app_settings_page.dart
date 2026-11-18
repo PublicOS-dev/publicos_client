@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData, Uint8List;
 import 'package:publicos_core/publicos_core.dart';
@@ -15,6 +16,7 @@ import 'package:publicos_client/components/system_app_scaffold.dart';
 import 'package:publicos_client/data/demo_contacts.dart';
 import 'package:publicos_client/data/demo_feeds_data.dart';
 import 'package:publicos_client/push_notifications_service.dart';
+import 'package:publicos_client/utils/open_app_system_settings.dart';
 import 'package:publicos_client/theme/glass_theme.dart';
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/providers/locale_provider.dart';
@@ -1399,6 +1401,9 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: _buildAvatarSection(tokens),
         ),
+        // iOS shows no mature profiles for now (browser.dart mature gate),
+        // so there is nothing to list here.
+        if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: _group(
@@ -1520,6 +1525,29 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
           value: _chainNotifications,
           onChanged: _updateChainNotifications,
         ),
+        // Android only: with background data off or battery restricted, a
+        // push arrives but the app has no network to read it, so nothing
+        // rings. Point the user at the two
+        // switches; they live on the app's page in the system settings.
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) ...[
+          const SizedBox(height: 14),
+          Text(
+            l10n.appSettingsPageNotifsNotArrivingDesc,
+            style: TextStyle(
+              fontFamily: 'SpaceGrotesk',
+              color: tokens.textDim,
+              fontSize: 11,
+              fontWeight: FontWeight.w400,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SystemAppActionButton(
+            label: l10n.appSettingsPageOpenSystemSettingsButton,
+            icon: Icons.settings_outlined,
+            onTap: openAppSystemSettings,
+          ),
+        ],
       ],
     );
   }

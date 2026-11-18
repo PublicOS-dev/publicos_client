@@ -289,6 +289,8 @@ class _ExplorerState extends State<Explorer>
   static const List<(String, String)> _defaultFollows = [
     (_publicosOrgName, _publicosOnboardedFlag),
     ('jmsl', 'jmsl_default_follow'),
+    // TheOrg lists the channels its members run (Diez Palomas, Backstage).
+    ('TheOrg', 'theorg_default_follow'),
   ];
 
   /// Resolve [name] on chain, upsert the contact, follow the ACCOUNT into the

@@ -106,6 +106,12 @@ class RssFeedsViewState extends State<RssFeedsView>
   /// is already reading.
   bool _postsRefreshing = false;
 
+  /// The post list lit its own "+" (a single feed this reader may post in:
+  /// a followed forum, an `approved` channel they're a poster of). Ours
+  /// steps aside meanwhile, so the "+" on screen posts into what is on
+  /// screen.
+  bool _postsListComposes = false;
+
   /// The "N new" chip once the list has docked it here.
   Widget? _dockedNewChip;
 
@@ -531,6 +537,8 @@ class RssFeedsViewState extends State<RssFeedsView>
       bodySize: _descriptionTextSize,
       trimChars: _trimChars,
       layoutMode: _layoutMode,
+      lists: _lists,
+      singleFeedByListId: _singleFeedByListId,
       onTitleChanged: (size) => setState(() => _titleTextSize = size),
       onBodyChanged: (size) => setState(() => _descriptionTextSize = size),
       onTrimChanged: (chars) => setState(() => _trimChars = chars),
@@ -741,7 +749,16 @@ class RssFeedsViewState extends State<RssFeedsView>
       final channelsResponse =
           futures[1] as FeedServerApiResponse<ChannelListResponse>;
 
-      final lists = _sortDefaultFirst(await _ensureDefaultList(fetchedLists));
+      // The reader's own drawer order wins over default-first once they have
+      // dragged a row (FeedsNavPrefs; a local settings read).
+      final lists = FeedsNavPrefs.applyOrder(
+        _sortDefaultFirst(await _ensureDefaultList(fetchedLists)),
+        await FeedsNavPrefs.listOrder(),
+      );
+      // Only a true cold start reads where to land (Reading settings →
+      // Landing).
+      final landingRaw =
+          _selected == null ? await FeedsNavPrefs.landing() : null;
 
       if (!mounted) return;
 
@@ -771,8 +788,16 @@ class RssFeedsViewState extends State<RssFeedsView>
       // the ACCOUNT rather than channel snapshots, is the normal state of a
       // healthy Following list. An empty list is a fine place to land, so
       // there is nothing to detect and nowhere to bounce to.
-      final Object? initialSelection =
-          needsInitialSelect && lists.isNotEmpty ? lists.first : null;
+      //
+      // A cold start lands where the reader chose
+      // (`resolveLanding`: never chosen = the first list, a chosen list that
+      // is gone = Latest posts). A list deleted while open still lands on the
+      // first list.
+      final Object? initialSelection = !needsInitialSelect
+          ? null
+          : _selected == null
+              ? FeedsNavPrefs.resolveLanding(landingRaw, lists)
+              : (lists.isNotEmpty ? lists.first : null);
 
       if (!mounted) return;
 
@@ -949,6 +974,8 @@ class RssFeedsViewState extends State<RssFeedsView>
       // selection; `_deriveRoster` repopulates it.
       _roster = null;
       _rosterListId = null;
+      // The new list reports its own "+" afresh.
+      _postsListComposes = false;
     });
     _deriveRoster();
   }
@@ -1097,9 +1124,17 @@ class RssFeedsViewState extends State<RssFeedsView>
       // cleaner than relying on didUpdateWidget when bookmarks toggle vs.
       // list/channel switches.
       key: ValueKey(_sourceKey),
-      // Inside Feeds the forum compose button shows only on a forum channel
-      // selection; everywhere else the view's own post button is there.
-      showNewPostButton: _selectedChannel?.isOpen ?? false,
+      // The list's own "+" (posts INTO the feed on screen) is allowed on a
+      // forum of ours and on anything that isn't one of our channels; it
+      // only lights when the server says this reader may post there. On our
+      // own feed-style channels the view's post button (with its channel
+      // picker) stays the one.
+      showNewPostButton:
+          _selectedChannel == null || _selectedChannel!.isOpen,
+      onComposeAvailable: (v) {
+        if (!mounted || _postsListComposes == v) return;
+        setState(() => _postsListComposes = v);
+      },
       feeds: roster,
       listId: _rosterListId,
       displayName: _selectedItemName,
@@ -1149,7 +1184,16 @@ class RssFeedsViewState extends State<RssFeedsView>
     // you own a channel to post to: the compose page's picker chooses where
     // when no channel is selected. A forum channel keeps PostsList's own
     // button (it posts INTO the forum), so ours steps aside there.
-    final showFab = _channels.isNotEmpty && !(_selectedChannel?.isOpen ?? false);
+    // On someone else's channel (a followed single feed) ours never shows:
+    // only the list's own "+" may appear, once the server says this reader
+    // may post there. Ours there posted into OUR channel, and
+    // until the answer landed it raced the list's.
+    final onForeignChannel = _selected is FeedList &&
+        (_selected as FeedList).isSingle;
+    final showFab = _channels.isNotEmpty &&
+        !onForeignChannel &&
+        !(_selectedChannel?.isOpen ?? false) &&
+        !_postsListComposes;
 
     return Column(
       children: [
@@ -1309,6 +1353,13 @@ class RssFeedsViewState extends State<RssFeedsView>
                       onAddAsTab: _addChannelAsTab,
                       onRemoveFromTab: _removeChannelFromTab,
                       onClose: _closeDrawer,
+                      onListsReordered: (lists) {
+                        setState(() => _lists = lists);
+                        // The drawer lives in an overlay entry, which this
+                        // State's setState does not rebuild.
+                        _drawerEntry?.markNeedsBuild();
+                        FeedsNavPrefs.setListOrder(lists);
+                      },
                       onEditList: (list) {
                         // Every list is editable now — the default list is a
                         // default, not a fixture. Renaming it just means the

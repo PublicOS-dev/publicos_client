@@ -88,6 +88,29 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
 
+        // Settings -> Notifications -> "Open system settings": this app's page
+        // in Android's settings, where Mobile data (background data) and
+        // Battery (unrestricted) live. With either one restricted a push
+        // arrives but the background handler has no network, so nothing rings.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.publicos/app_system_settings")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "open") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+                try {
+                    startActivity(
+                        Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.parse("package:$packageName")
+                        )
+                    )
+                    result.success(true)
+                } catch (e: Exception) {
+                    result.success(false)
+                }
+            }
+
         // Social push token: the SECOND Firebase
         // project's FCM token. firebase_messaging serves the default app only,
         // so the secondary app is initialised here from the options Dart

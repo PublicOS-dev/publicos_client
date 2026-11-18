@@ -32,6 +32,10 @@ class CommentCard extends StatefulWidget {
   final void Function(Comment) onReply;
   final void Function(Comment, int) onVote;
   final void Function(Comment, String) onEdit;
+
+  /// Told when this card enters (true) or leaves (false) in-place editing,
+  /// so the page can hide its pinned composer meanwhile.
+  final void Function(Comment, bool)? onEditingChanged;
   final void Function(Comment) onDelete;
   final void Function(Comment) onLoadMoreReplies;
   /// The server toggle: true = added, false = removed, null = failed.
@@ -64,6 +68,7 @@ class CommentCard extends StatefulWidget {
     required this.onReply,
     required this.onVote,
     required this.onEdit,
+    this.onEditingChanged,
     required this.onDelete,
     required this.onLoadMoreReplies,
     required this.onReact,
@@ -151,6 +156,12 @@ class _CommentCardState extends State<CommentCard> {
 
   @override
   void dispose() {
+    // Scrolled out of the list mid-edit: the edit is gone, so give the page
+    // its composer back. After the frame, because the tree is locked here.
+    if (_editing && widget.onEditingChanged != null) {
+      final cb = widget.onEditingChanged!, c = widget.comment;
+      WidgetsBinding.instance.addPostFrameCallback((_) => cb(c, false));
+    }
     _editCtrl.dispose();
     super.dispose();
   }
@@ -401,9 +412,13 @@ class _CommentCardState extends State<CommentCard> {
   void _startEdit() {
     _editCtrl.loadRaw(widget.comment.content);
     setState(() => _editing = true);
+    widget.onEditingChanged?.call(widget.comment, true);
   }
 
-  void _cancelEdit() => setState(() => _editing = false);
+  void _cancelEdit() {
+    setState(() => _editing = false);
+    widget.onEditingChanged?.call(widget.comment, false);
+  }
 
   void _saveEdit() {
     // Wire form — mention runs back to @[0xAddr] tokens.
@@ -413,6 +428,7 @@ class _CommentCardState extends State<CommentCard> {
       return;
     }
     setState(() => _editing = false);
+    widget.onEditingChanged?.call(widget.comment, false);
     widget.onEdit(widget.comment, next);
   }
 
@@ -709,6 +725,7 @@ class _CommentCardState extends State<CommentCard> {
                             onReply: widget.onReply,
                             onVote: widget.onVote,
                             onEdit: widget.onEdit,
+                            onEditingChanged: widget.onEditingChanged,
                             onDelete: widget.onDelete,
                             onLoadMoreReplies: widget.onLoadMoreReplies,
                             onReact: widget.onReact,

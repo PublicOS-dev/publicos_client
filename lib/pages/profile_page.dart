@@ -530,7 +530,8 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildJoinedSection() {
-    // createdAt is filled by browser's `_withCreatedAt` (immutable once set);
+    // createdAt comes from the stored contact (shown at once) and is
+    // re-checked by browser's `_withCreatedAt` on each chain sync;
     // _contact mirrors widget.contact, so just read it here. The space stays
     // reserved even while createdAt is null — otherwise sections below jump
     // when chain enrichment lands (first cold load + the brief window before

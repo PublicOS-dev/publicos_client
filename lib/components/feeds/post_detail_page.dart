@@ -104,6 +104,18 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Comment? _replyingTo;
   Contact? _replyingToContact;
 
+  /// Uids of the comments being edited in place right now. While any is,
+  /// the pinned composer is hidden: the edit field is the only input on
+  /// screen.
+  final Set<String> _editingComments = {};
+
+  void _onCommentEditing(Comment c, bool editing) {
+    final changed = editing
+        ? _editingComments.add(c.uid)
+        : _editingComments.remove(c.uid);
+    if (changed && mounted) setState(() {});
+  }
+
   /// Local mirror of the bookmark flag so taps from inside the detail page
   /// flip the icon immediately without round-tripping through the parent.
   /// The callback to widget.onBookmarkToggled still fires so the feeds
@@ -708,6 +720,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           onReply: _enterReplyMode,
                           onVote: _voteComment,
                           onEdit: _editComment,
+                          onEditingChanged: _onCommentEditing,
                           onDelete: _deleteComment,
                           onLoadMoreReplies: _loadMoreReplies,
                           onReact: _reactToComment,
@@ -736,7 +749,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 ),
               ),
             ),
-            if (_canComment) _buildComposer(tokens),
+            if (_canComment && _editingComments.isEmpty)
+              _buildComposer(tokens),
           ],
         ),
       ),
