@@ -1,6 +1,6 @@
 /// In-app routing for links our own code is about to open.
 ///
-/// A `https://publicos.dev` link under one of the three claimed prefixes is
+/// A `https://publicos.dev` link under one of the claimed prefixes is
 /// one the OS hands back to this app. Android does that round trip, but iOS
 /// never re-enters an app that opens its own universal link: it goes to
 /// Safari. So every place that launches a URL
@@ -19,6 +19,9 @@ const List<String> _kClaimedPrefixes = [
   '/conversationTopic/',
 ];
 
+/// Claimed as an exact path, not a prefix: `/post?url=…`, a shared post.
+const String _kPostPath = '/post';
+
 /// Set by `AppInitializer.setupDeepLinkChannel` to the inbound-link handler.
 /// Null before boot wires it, and then nothing is intercepted.
 bool Function(String url)? ownLinkRouter;
@@ -27,6 +30,8 @@ bool Function(String url)? ownLinkRouter;
 /// otherwise, and the caller launches it exactly as before.
 bool routeOwnLink(Uri uri) {
   if (uri.scheme != 'https' || uri.host != 'publicos.dev') return false;
-  if (!_kClaimedPrefixes.any(uri.path.startsWith)) return false;
+  if (uri.path != _kPostPath && !_kClaimedPrefixes.any(uri.path.startsWith)) {
+    return false;
+  }
   return ownLinkRouter?.call(uri.toString()) ?? false;
 }

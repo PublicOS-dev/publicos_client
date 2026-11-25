@@ -138,7 +138,7 @@ class _TransferDetailSheet extends StatelessWidget {
         size: 44,
       );
     } else if (counterparty != null) {
-      mark = GlassContactIcon(contact: counterparty, size: 44);
+      mark = GlassContactIcon(opensProfile: true, contact: counterparty, size: 44);
     } else {
       // Not a PublicOS account — a bare EOA, a contract, or address(0) on a
       // mint. No avatar, by design.
@@ -152,7 +152,7 @@ class _TransferDetailSheet extends StatelessWidget {
           mark,
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
+            child: ContactProfileTap(contact: ours ? null : counterparty, child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -176,7 +176,7 @@ class _TransferDetailSheet extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
+            )),
           ),
         ],
       ),

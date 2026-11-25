@@ -23,6 +23,7 @@ import 'package:publicos_client/components/orgs/pick_org_members_sheet.dart';
 import 'package:publicos_client/components/send_icon.dart';
 import 'package:publicos_client/components/transactions/send_sheet.dart';
 import 'package:publicos_client/router.dart';
+import 'package:publicos_client/router_helpers.dart';
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/l10n/app_localizations.dart';
 import 'package:publicos_client/widgets/error/error_l10n.dart';
@@ -555,6 +556,7 @@ class _GroupVotingViewState extends State<GroupVotingView> {
       context,
       members: _memberContacts,
       canMutate: widget.isOrgMember,
+      onMemberTap: (c) => AppNav.toContact(context, c),
     );
     if (result == null || !mounted) return;
     if (result.requestAdd) {
@@ -1092,9 +1094,11 @@ class _GroupVotingViewState extends State<GroupVotingView> {
             memberContacts: _memberContacts,
             onMembersTap: _openMembersSheet,
             parentContact: _parentContact,
-            // Tap on parent tile is a no-op while there's no mutation
-            // surface yet (no Request / Cancel buttons in this pass).
-            onParentTap: null,
+            // The parent tile opens the parent org's profile. (No mutation
+            // surface here yet: no Request / Cancel buttons in this pass.)
+            onParentTap: _parentContact == null
+                ? null
+                : () => AppNav.toContact(context, _parentContact!),
             childCount: _childCount,
             childContacts: _childContacts,
             onChildrenTap: _childCount > 0 ? _openChildrenSheet : null,
@@ -3654,9 +3658,13 @@ class _VoteHeadlineState extends State<_VoteHeadline> {
           SizedBox(
             width: 22,
             height: 22,
-            child: GlassContactIcon(contact: c, size: 22),
+            child: GlassContactIcon(opensProfile: true, contact: c, size: 22),
           ),
-        Text(c?.displayName ?? _short(addr), style: _titleStyle),
+        ContactProfileTap(
+          contact: c,
+          address: addr,
+          child: Text(c?.displayName ?? _short(addr), style: _titleStyle),
+        ),
       ],
     );
   }

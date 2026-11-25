@@ -15,6 +15,7 @@ import 'package:publicos_client/pages/manage_inbox_ids_page.dart';
 import 'package:publicos_client/l10n/boot_phase.dart';
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/utils/own_links.dart';
+import 'package:publicos_client/utils/post_links.dart';
 
 /// Runs the app initialization sequence and updates [AppStateNotifier]
 /// at each milestone so GoRouter can redirect appropriately.
@@ -336,6 +337,10 @@ class AppInitializer {
 
     // Handle https://publicos.dev/... universal links
     if (uri.scheme == 'https' && uri.host == 'publicos.dev') {
+      // A shared post, in either shape (a tab link carrying `?post=`, or
+      // `/post?url=`), opens the post page, never the tab.
+      final link = parse(url);
+      if (link?.post != null) return postRouteOf(link!);
       // Return the path as-is — GoRouter's redirect handles normalization
       return uri.path + (uri.query.isNotEmpty ? '?${uri.query}' : '');
     }
@@ -374,7 +379,17 @@ class AppInitializer {
       await PublicOSConversations.loadDrafts();
       appState.setLoadingMessage(BootPhase.checkingAuth.name);
 
-      // Step 2: Authenticate
+      // Step 2: Authenticate. A device with a screen lock is asked for it, as
+      // always. One without (or one that already has an app PIN) gets the app's
+      // own lock screen instead of the dead end it used to hit: that screen
+      // sets PublicOS.isAuthenticated and calls initialize again.
+      if (!PublicOS.isAuthenticated && !PublicOS.debugNoAuthNeeded) {
+        final gate = await PublicOSAuth.authGate();
+        if (gate != AuthGate.deviceLock) {
+          appState.setLockGate(gate, onRetry: initialize);
+          return;
+        }
+      }
       final isAuthenticated =
           PublicOS.isAuthenticated || await PublicOSAuth.authenticate();
       if (!isAuthenticated && !PublicOS.debugNoAuthNeeded) {
@@ -500,6 +515,15 @@ class AppInitializer {
 
     onStatus?.call(BootPhase.opening.name);
     appState.setAccountSelected(true);
+
+    // What this account still has to sign on its server (non-blocking, never
+    // fails the boot): the owner's claim on each channel, and posts from
+    // before a signature named the post's own address. One isolated block in
+    // Core (PublicOSSignatureBacklog); the post half is temporary.
+    PublicOSSignatureBacklog.run().catchError((e) {
+      print('AppInitializer: [STARTUP] signature backlog failed: $e');
+      return (channels: 0, posts: 0, failed: 0);
+    });
 
     // Background sync XMTP conversations (non-blocking).
     print('AppInitializer: [STARTUP] Starting background XMTP sync...');

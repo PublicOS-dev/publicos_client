@@ -9,9 +9,11 @@ import 'package:publicos_client/app_routes.dart';
 import 'package:publicos_client/pages/browser.dart';
 import 'package:publicos_client/pages/explorer.dart';
 import 'package:publicos_client/components/initialization_screen.dart';
+import 'package:publicos_client/components/app_lock_screen.dart';
 import 'package:publicos_client/components/select_account_screen.dart';
 import 'package:publicos_client/components/add_session_dialog.dart';
 import 'package:publicos_client/components/new_account_dialog.dart';
+import 'components/feeds/feed_reader_page.dart';
 import 'pages/post_from_url_page.dart';
 import 'pages/channel_from_url_page.dart';
 
@@ -193,6 +195,20 @@ class AppStateNotifier extends ChangeNotifier {
   void setLoadingMessage(String? message) {
     _loadingMessage = message;
     _errorMessage = null;
+    _lockGate = null;
+    notifyListeners();
+  }
+
+  /// Boot is waiting on the app's own lock screen (a device with no screen
+  /// lock, or one with an app PIN). `onRetry` re-runs the boot once the
+  /// screen is done. Cleared by the next [setLoadingMessage].
+  AuthGate? _lockGate;
+  AuthGate? get lockGate => _lockGate;
+
+  void setLockGate(AuthGate gate, {VoidCallback? onRetry}) {
+    _lockGate = gate;
+    _errorMessage = null;
+    _onRetry = onRetry;
     notifyListeners();
   }
 
@@ -214,6 +230,7 @@ class AppStateNotifier extends ChangeNotifier {
     _pendingKeyLink = null;
     _loadingMessage = null;
     _errorMessage = null;
+    _lockGate = null;
     _onRetry = null;
     _myContact = null;
     notifyListeners();
@@ -289,11 +306,16 @@ GoRouter createRouter(AppStateNotifier appState) {
         path: '/init',
         builder: (context, state) => ListenableBuilder(
           listenable: appState,
-          builder: (context, _) => InitializationScreen(
-            loadingMessage: appState.loadingMessage,
-            errorMessage: appState.errorMessage,
-            onRetry: appState.onRetry,
-          ),
+          builder: (context, _) => appState.lockGate != null
+              ? AppLockScreen(
+                  gate: appState.lockGate!,
+                  onDone: appState.onRetry ?? () {},
+                )
+              : InitializationScreen(
+                  loadingMessage: appState.loadingMessage,
+                  errorMessage: appState.errorMessage,
+                  onRetry: appState.onRetry,
+                ),
         ),
       ),
 
@@ -400,7 +422,28 @@ GoRouter createRouter(AppStateNotifier appState) {
         path: '/post',
         pageBuilder: (context, state) => CupertinoPage<void>(
           key: state.pageKey,
-          child: PostFromUrlPage(url: state.uri.queryParameters['url'] ?? ''),
+          child: PostFromUrlPage(
+            url: state.uri.queryParameters['url'] ?? '',
+            // A share link's extras; a notification tap carries the url alone.
+            feed: state.uri.queryParameters['feed'],
+            foundAt: state.uri.queryParameters['at'],
+            tabKey: state.uri.queryParameters['tab'],
+            ladder: state.uri.queryParameters['link'] == '1',
+          ),
+        ),
+      ),
+
+      // One feed by URL, ours or an outside one: the page a shared post puts
+      // under itself when its tab does not verify. App-internal: not a
+      // publicos.dev shape, never shared.
+      GoRoute(
+        path: '/feed',
+        pageBuilder: (context, state) => CupertinoPage<void>(
+          key: state.pageKey,
+          child: FeedReaderPage(
+            feedUrl: state.uri.queryParameters['url'] ?? '',
+            title: state.uri.queryParameters['title'],
+          ),
         ),
       ),
 

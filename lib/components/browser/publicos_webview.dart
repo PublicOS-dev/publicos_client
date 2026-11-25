@@ -23,6 +23,7 @@ import 'package:web3dart/web3dart.dart' show EthPrivateKey;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/components/pixel_rain_loading_label.dart';
 import 'package:publicos_client/components/browser/web3_adapters.dart';
 import 'package:publicos_client/components/phigital_loading_widget.dart';
@@ -78,6 +79,22 @@ class PublicOSWebView extends StatefulWidget {
   /// EOA wallet, or the account owner key for a Safe (EIP-1271 / Safe-routing
   /// is deferred). When null, signing falls back to the web-selected/session key.
   final EthPrivateKey? overrideSigningKey;
+
+  /// True when [overrideAccountAddress] is a wallet this device holds NO key
+  /// for. The page may be shown the address; a signature request is refused,
+  /// and [onNoSigningKey] says so. Its approval is kept for this view only,
+  /// never stored (see the bridge's `PinnedGrantStore`).
+  final bool overrideWatchOnly;
+
+  /// A counter the host bumps to open THIS page's key permissions through its
+  /// own gate (the Manage view's key chip). In a pinned view that is the one
+  /// pinned key: approve it for the site, or take the approval back.
+  final int permissionsRevision;
+
+  /// The page asked a granted address to sign and no key is held for it (a
+  /// watched wallet). The host shows the notice where the user can see it;
+  /// with no host callback a snackbar is used.
+  final VoidCallback? onNoSigningKey;
 
   /// Fired whenever this page's CONNECTION state changes — `true` on a fresh
   /// grant (connect sheet) or a returning-granted load, `false` on an ungranted
@@ -197,6 +214,9 @@ class PublicOSWebView extends StatefulWidget {
     this.onCanGoBackChanged,
     this.overrideAccountAddress,
     this.overrideSigningKey,
+    this.overrideWatchOnly = false,
+    this.permissionsRevision = 0,
+    this.onNoSigningKey,
     this.onConnectionChanged,
     this.onActiveAccountChanged,
     this.onChainRegistryCreated,
@@ -317,6 +337,31 @@ class _PublicOSWebViewState extends State<PublicOSWebView> {
 
   String get _chainId => _chains.currentChainId;
 
+  /// A granted address was asked to sign and this device holds no key for it.
+  void _noSigningKey() {
+    if (!mounted) return;
+    final tell = widget.onNoSigningKey;
+    if (tell != null) {
+      tell();
+      return;
+    }
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(context.l10n.walletWatchOnlyCantSign)),
+    );
+  }
+
+  /// Open this page's key permissions through its own gate, so every write
+  /// goes through the same store the page reads ([permissionsRevision]).
+  Future<void> _openPermissions() async {
+    final gate = _gate;
+    if (gate == null) return;
+    try {
+      await gate.requestPermissions(_currentOrigin);
+    } catch (_) {
+      // Dismissed, or the page has no origin yet. Nothing changed.
+    }
+  }
+
   /// Reads `widget.` through closures on every call, NOT captured once.
   ///
   /// The wallet manager builds this webview BEFORE its managed key has
@@ -343,7 +388,15 @@ class _PublicOSWebViewState extends State<PublicOSWebView> {
 
     final gate = ConnectGate(
       wallet: wallet,
-      grants: const CoreGrantStore(),
+      // The grant table as THIS view may see it. Pinned (the Manage view):
+      // only the pinned key's own approval, and the site's stored active key
+      // is never read or written, so the regular browser's choices for the
+      // same site are untouched. Not pinned: the table as it is.
+      grants: PinnedGrantStore(
+        const CoreGrantStore(),
+        pinOf: () => widget.overrideAccountAddress,
+        watchOnlyOf: () => widget.overrideWatchOnly,
+      ),
       consent: SheetWeb3Consent(
         contextOf: () => mounted ? context : null,
         chainIdOf: () => _chainId,
@@ -374,6 +427,7 @@ class _PublicOSWebViewState extends State<PublicOSWebView> {
       rpc: HttpWeb3Rpc(_chains, log: _log),
       transactions: ChainTransactionExecutor(_chains, log: _log),
       currentOrigin: () => _currentOrigin,
+      onNoSigningKey: (_) => _noSigningKey(),
       // Unrestricted for now: the scope safeguard ships with its policy
       // permissive, so that adding real enforcement later is changing a value
       // rather than threading a parameter through every construction site.
@@ -498,6 +552,9 @@ class _PublicOSWebViewState extends State<PublicOSWebView> {
     if (widget.grantsRevision != oldWidget.grantsRevision &&
         widget.initialUrl == oldWidget.initialUrl) {
       _gate?.refresh(_currentOrigin);
+    }
+    if (widget.permissionsRevision != oldWidget.permissionsRevision) {
+      _openPermissions();
     }
   }
 

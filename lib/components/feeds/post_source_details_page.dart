@@ -211,9 +211,10 @@ class _HumanHeader extends StatelessWidget {
             Row(
               children: [
                 if (authorContact != null)
-                  GlassContactIcon(contact: authorContact, size: 44)
+                  GlassContactIcon(opensProfile: true, contact: authorContact, size: 44)
                 else
                   GlassContactIcon(
+                    opensProfile: true,
                     address: post.postAuthorAddress ??
                         post.feedFoundAtAccountAddress ??
                         '',
@@ -221,7 +222,7 @@ class _HumanHeader extends StatelessWidget {
                   ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
+                  child: ContactProfileTap(contact: authorContact, address: post.postAuthorAddress ?? post.feedFoundAtAccountAddress, child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -256,7 +257,7 @@ class _HumanHeader extends StatelessWidget {
                         ),
                       ),
                     ],
-                  ),
+                  )),
                 ),
               ],
             ),

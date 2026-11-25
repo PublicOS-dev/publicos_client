@@ -166,6 +166,7 @@ class _EditListBottomSheetState extends State<EditListBottomSheet> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: GlassContactIcon(
+            opensProfile: true,
             contact: contact,
             size: 36,
           ),

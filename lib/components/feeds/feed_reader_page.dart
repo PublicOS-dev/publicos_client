@@ -48,7 +48,8 @@ class _FeedReaderPageState extends State<FeedReaderPage> {
     try {
       for (final list in await PublicOSFeedLists.getUserLists()) {
         final feeds = await PublicOSFeedLists.getFeedsInList(list.id);
-        if (feeds.any((f) => f.feedUrl == widget.feedUrl)) {
+        if (feeds.any(
+            (f) => feedUrlKey(f.feedUrl) == feedUrlKey(widget.feedUrl))) {
           inAnyList = true;
           break;
         }
@@ -69,8 +70,16 @@ class _FeedReaderPageState extends State<FeedReaderPage> {
     if (result == true) _checkInList();
   }
 
+  /// Share copies what we hold (post_identity): the tab's publicos.dev
+  /// link when this feed is read through a profile's tab, else the feed's
+  /// own address.
   Future<void> _copyFeedUrl() async {
-    await Clipboard.setData(ClipboardData(text: widget.feedUrl));
+    final at = widget.foundAtAccountAddress;
+    final key = widget.recordKey;
+    final link = at != null && at.isNotEmpty && key != null && key.isNotEmpty
+        ? tabShareLink(foundAtAddress: at, tabKey: key)
+        : widget.feedUrl;
+    await Clipboard.setData(ClipboardData(text: link));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

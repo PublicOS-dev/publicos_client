@@ -1941,8 +1941,20 @@ class MessageInputState extends State<MessageInput> with WidgetsBindingObserver 
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  _anchored(_buildKeyChip(tokens)),
-                  const SizedBox(width: 0),
+                  // The key chip slides out to the left while you write (or
+                  // hold an attachment) and comes back when the field is empty:
+                  // the comment composer's avatar behaviour, ported.
+                  // widthFactor animates the width, right alignment makes it
+                  // leave leftwards.
+                  ClipRect(
+                    child: AnimatedAlign(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.centerRight,
+                      widthFactor: _isComposing ? 0 : 1,
+                      child: _anchored(_buildKeyChip(tokens)),
+                    ),
+                  ),
                   // Text field — dark grey rounded surface; attach lives
                   // inside it, at the right edge. Material (not Container)
                   // so the attach ripple draws ON the surface, not under it.

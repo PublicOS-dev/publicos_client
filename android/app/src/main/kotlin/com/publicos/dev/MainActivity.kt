@@ -94,18 +94,32 @@ class MainActivity : FlutterFragmentActivity() {
         // arrives but the background handler has no network, so nothing rings.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.publicos/app_system_settings")
             .setMethodCallHandler { call, result ->
-                if (call.method != "open") {
-                    result.notImplemented()
-                    return@setMethodCallHandler
-                }
                 try {
-                    startActivity(
-                        Intent(
-                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            android.net.Uri.parse("package:$packageName")
-                        )
-                    )
-                    result.success(true)
+                    when (call.method) {
+                        "open" -> {
+                            startActivity(
+                                Intent(
+                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:$packageName")
+                                )
+                            )
+                            result.success(true)
+                        }
+                        // The no-screen-lock boot screen: the phone's own
+                        // security page, where a screen lock is set.
+                        "openSecurity" -> {
+                            startActivity(Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
+                            result.success(true)
+                        }
+                        // The way out of a forgotten or locked app PIN: the
+                        // system deletes ALL of this app's data and ends the
+                        // process, the same as Settings > Apps > Clear storage.
+                        "clearAppData" -> {
+                            val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+                            result.success(am.clearApplicationUserData())
+                        }
+                        else -> result.notImplemented()
+                    }
                 } catch (e: Exception) {
                     result.success(false)
                 }

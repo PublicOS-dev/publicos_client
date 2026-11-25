@@ -8,6 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:wallet/wallet.dart';
 import 'package:web3dart/web3dart.dart' show EthPrivateKey;
 import 'package:file_selector/file_selector.dart';
+import 'package:intl/intl.dart' show DateFormat;
+import 'package:path_provider/path_provider.dart';
+import 'package:publicos_client/widgets/fullscreen_overlay.dart';
 import 'package:publicos_client/components/feeds/emoji_picker_dialog.dart';
 import 'package:publicos_client/components/glass_contact_icon.dart';
 import 'package:publicos_client/components/keychain/inbox_tab_dialog.dart';
@@ -75,7 +78,7 @@ enum KeychainType { xmtp, web }
 enum KeychainOnboardingMode { off, create, activate, tour }
 
 /// The user's choice when a key is not yet set up for XMTP on this device.
-enum _XmtpSetupChoice { createFresh, restore }
+enum _XmtpSetupChoice { createFresh, restore, restoreSsp }
 
 class KeychainSheet extends StatefulWidget {
   final EthereumAddress? orgAddress;
@@ -103,6 +106,11 @@ class KeychainSheet extends StatefulWidget {
   final GlobalKey? tourGenerateKey;
   final GlobalKey? tourSimKey;
 
+  /// The title and the session key row, for the tour's house beat, which
+  /// spotlights both at once before GENERATE.
+  final GlobalKey? tourTitleKey;
+  final GlobalKey? tourSessionKey;
+
   const KeychainSheet({
     super.key,
     this.orgAddress,
@@ -112,6 +120,8 @@ class KeychainSheet extends StatefulWidget {
     this.onboardingMode = KeychainOnboardingMode.off,
     this.tourGenerateKey,
     this.tourSimKey,
+    this.tourTitleKey,
+    this.tourSessionKey,
   });
 
   bool get isGroupContext => orgAddress != null;
@@ -124,6 +134,11 @@ class KeychainSheet extends StatefulWidget {
   /// section can name the same key rather than duplicate the string — one
   /// setting, two surfaces, no chance of them drifting apart.
   static const String kInboxPromptOffKey = 'xmtp_inbox_register_never_ask';
+
+  /// Per-key "Keep private": the offer's left button. Stored as
+  /// `<prefix><inboxId>` = 'true', local, so that key's inbox is not offered
+  /// again. The manual publish row is untouched by it.
+  static const String kInboxKeepPrivatePrefix = 'xmtp_inbox_keep_private:';
 
   @override
   State<KeychainSheet> createState() => _KeychainSheetState();
@@ -862,6 +877,7 @@ class _KeychainSheetState extends State<KeychainSheet>
     required String body,
     required String cta,
     bool destructive = false,
+    String? cancel,
   }) {
     return showDialog<bool>(
       context: context,
@@ -934,7 +950,7 @@ class _KeychainSheetState extends State<KeychainSheet>
                           ),
                           onPressed: () => Navigator.pop(ctx, false),
                           child: Text(
-                            ctx.l10n.dlgCancel,
+                            cancel ?? ctx.l10n.dlgCancel,
                             style: const TextStyle(
                               fontFamily: 'SpaceGrotesk',
                               fontWeight: FontWeight.w700,
@@ -1001,6 +1017,36 @@ class _KeychainSheetState extends State<KeychainSheet>
       if (confirmed != true) return;
     }
 
+    // Second question: the key's chats stay on the device unless the user says
+    // so here. Asked only when this key has chat data on this device.
+    // Dismissing the dialog stops the whole delete.
+    final currentAddr = AppStateNotifier.currentMyContact?.publicosAddress?.eip55With0x;
+    bool deleteChats = false;
+    String? chatsInbox;
+    if (currentAddr != null) {
+      chatsInbox = await PublicOSKeychain.keyChatsInboxId(currentAddr, label);
+      if (!mounted) return;
+      if (chatsInbox != null) {
+        final short = chatsInbox.length > 12
+            ? '${chatsInbox.substring(0, 6)}...${chatsInbox.substring(chatsInbox.length - 4)}'
+            : chatsInbox;
+        final answer = await _confirm(
+          title: context.l10n.keychainDeleteChatsTitle,
+          body: context.l10n.keychainDeleteChatsBody(short),
+          cta: context.l10n.keychainDeleteChatsDelete,
+          cancel: context.l10n.keychainDeleteChatsKeep,
+          destructive: true,
+        );
+        if (answer == null || !mounted) return;
+        deleteChats = answer;
+      }
+    }
+    // The same inbox may be loaded under another label of this key.
+    final unloadForChats = deleteChats &&
+        !loaded &&
+        chatsInbox != null &&
+        PublicOS.clientXmtpInboxId == chatsInbox;
+
     try {
       setState(() => _isLoading = true);
 
@@ -1011,13 +1057,14 @@ class _KeychainSheetState extends State<KeychainSheet>
       }
 
       // Unload first, then delete — never the other way round.
-      if (loaded) {
+      if (loaded || unloadForChats) {
         await _unloadXmtp();
         _currentClientAddress = null;
         _currentInboxId = null;
       }
 
-      await PublicOSKeychain.deleteKey(currentUserAddress, label);
+      await PublicOSKeychain.deleteKey(currentUserAddress, label,
+          deleteChats: deleteChats);
 
       // Update selection state if deleted key was selected
       if (_currentSelectedKey == label) {
@@ -1307,6 +1354,32 @@ class _KeychainSheetState extends State<KeychainSheet>
     }
   }
 
+  /// The loaded key's green sim, pressed. Same unload the delete path runs,
+  /// with no delete: stream off, native client closed, loaded-key fields
+  /// cleared. The saved selection is cleared too, so the next start does not
+  /// load it back. Pops `true` like a load, so every host that reloads on a key
+  /// change reloads on this.
+  Future<void> _unloadKey() async {
+    try {
+      setState(() => _isLoading = true);
+      await _unloadXmtp();
+      final addr =
+          AppStateNotifier.currentMyContact?.publicosAddress?.eip55With0x;
+      if (addr != null) await PublicOSKeychain.clearXmtpSelectedKey(addr);
+      _currentClientAddress = null;
+      _currentInboxId = null;
+      _currentSelectedKey = null;
+      _snackMsg((l) => l.keychainKeyUnloaded);
+      widget.onKeysChanged?.call();
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        _snackError(e);
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   Future<void> _selectKey(String label, String privateKeyHex) async {
     try {
       setState(() => _isLoading = true);
@@ -1396,14 +1469,30 @@ class _KeychainSheetState extends State<KeychainSheet>
         if (!context.mounted) return false;
         return _setupFreshWithCapRecovery(context, userAddress, label);
       }
+      // Does the account's SSP hold a chat backup made with this key (the
+      // "Backup to SSP" row on the other device, kept 24 hours)? Then the
+      // dialog offers it. Any failure reads as "none": the other two options
+      // are still there.
+      PediaFile? sspBackup;
+      try {
+        sspBackup = await PublicOSKeychain.findChatBackup(userAddress, label)
+            .timeout(const Duration(seconds: 8));
+      } catch (e) {
+        debugPrint('KeychainSheet: [ACTIVATE] SSP backup lookup failed: $e');
+      }
+      debugPrint(
+          'KeychainSheet: [ACTIVATE] SSP backup = ${sspBackup?.id ?? "none"}');
       if (!context.mounted) return false;
-      final choice = await _showSetupChoiceDialog(context);
+      final choice =
+          await _showSetupChoiceDialog(context, sspBackup: sspBackup);
       debugPrint('KeychainSheet: [ACTIVATE] user chose: ${choice?.name ?? "cancel"}');
       switch (choice) {
         case _XmtpSetupChoice.createFresh:
           return _setupFreshWithCapRecovery(context, userAddress, label);
         case _XmtpSetupChoice.restore:
           return _runRestoreBackup(context, userAddress, label);
+        case _XmtpSetupChoice.restoreSsp:
+          return _runRestoreFromSsp(context, userAddress, label, sspBackup!);
         case null:
           return false;
       }
@@ -1498,8 +1587,48 @@ class _KeychainSheetState extends State<KeychainSheet>
     }
   }
 
+  /// Restore the chat backup the account's SSP holds for this key: the SAME
+  /// installation as the device that made it, no slot burned, nothing to
+  /// pick or paste. The server copy is left for its 24 hour timer.
+  static Future<bool> _runRestoreFromSsp(BuildContext context,
+      String userAddress, String label, PediaFile backup) async {
+    final l10n = context.l10n;
+    final overlay =
+        FullscreenOverlay.showBlocking(context, l10n.keychainRestoreSspWorking);
+    try {
+      final tmpDir = await getTemporaryDirectory();
+      await PublicOSKeychain.restoreChatBackup(
+          userAddress, label, backup, tmpDir.path);
+      debugPrint('KeychainSheet: [RESTORE-SSP] SUCCESS');
+      overlay.dismiss();
+      return true;
+    } catch (e, st) {
+      debugPrint('KeychainSheet: [RESTORE-SSP] FAILED: $e\n$st');
+      overlay.dismiss();
+      if (context.mounted) {
+        await _showSimpleDialog(
+            context,
+            l10n.keychainRestoreFailedTitle,
+            e is ChatBackupKeyException
+                ? l10n.keychainRestoreSspWrongKey
+                : e.toString());
+      }
+      return false;
+    }
+  }
+
+  /// When a chat backup was made, in the user's own time and language.
+  static String _backupWhen(BuildContext context, PediaFile backup) {
+    final made = DateTime.tryParse(backup.createdAt)?.toLocal();
+    if (made == null) return backup.createdAt;
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    return DateFormat.MMMd(locale).add_Hm().format(made);
+  }
+
   /// The create-vs-restore choice shown when a key is not set up here.
-  static Future<_XmtpSetupChoice?> _showSetupChoiceDialog(BuildContext context) {
+  /// [sspBackup] adds the third option, restore from the user's SSP.
+  static Future<_XmtpSetupChoice?> _showSetupChoiceDialog(BuildContext context,
+      {PediaFile? sspBackup}) {
     return showDialog<_XmtpSetupChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1521,6 +1650,14 @@ class _KeychainSheetState extends State<KeychainSheet>
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text(ctx.l10n.keychainSetupRestoreDetail),
+              if (sspBackup != null) ...[
+                const SizedBox(height: 12),
+                Text(ctx.l10n.keychainSetupRestoreSsp,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(ctx.l10n.keychainSetupRestoreSspDetail(
+                    _backupWhen(ctx, sspBackup))),
+              ],
               const SizedBox(height: 16),
               // Guidance, not a third option. A key with no
               // inbox on the network never reaches this dialog at all (the
@@ -1552,6 +1689,12 @@ class _KeychainSheetState extends State<KeychainSheet>
             onPressed: () => Navigator.pop(ctx, _XmtpSetupChoice.restore),
             child: Text(ctx.l10n.keychainSetupRestore),
           ),
+          if (sspBackup != null)
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(ctx, _XmtpSetupChoice.restoreSsp),
+              child: Text(ctx.l10n.keychainSetupRestoreSsp),
+            ),
           // **Start fresh is the recommended action, and it is emphasised.**
           // Three identical TextButtons made this read as a genuine three-way
           // choice, but it is not one: restoring needs a database file exported
@@ -1748,6 +1891,17 @@ class _KeychainSheetState extends State<KeychainSheet>
     final inboxId = PublicOS.clientXmtpInboxId;
     if (inboxId == null || inboxId.isEmpty) return;
 
+    // Gate 1b: the user already answered "Keep private" for this key.
+    final keepPrivateKey = KeychainSheet.kInboxKeepPrivatePrefix + inboxId;
+    if (!inTour) {
+      try {
+        final kept = await PublicOSSettings.getSetting(keepPrivateKey);
+        if (kept?.value == 'true') return;
+      } catch (_) {
+        // Unreadable: ask.
+      }
+    }
+
     // Gate 2 — already published for this account.
     try {
       if (await PublicOSXmtp.accountInboxIdExists(StringToBytes(inboxId))) {
@@ -1788,8 +1942,26 @@ class _KeychainSheetState extends State<KeychainSheet>
       cta: context.l10n.keychainOfferRegPublish,
       initialLabel: defaultLabel,
       offerDontAsk: !inTour,
+      cancelLabel: context.l10n.keychainOfferRegKeepPrivate,
     );
     if (result == null) return;
+
+    // "Keep private" pressed: remember the no for this key.
+    if (!result.saved && !inTour) {
+      try {
+        await PublicOSSettings.setSetting(
+          keepPrivateKey,
+          Record.asSettings(
+            key: keepPrivateKey,
+            value: 'true',
+            isSystem: true,
+            isExpired: false,
+          ),
+        );
+      } catch (_) {
+        // Non-fatal: worst case we ask again next time.
+      }
+    }
 
     if (result.dontAskAgain) {
       try {
@@ -2092,6 +2264,7 @@ class _KeychainSheetState extends State<KeychainSheet>
                     children: [
                       Text(
                         _contextLabel(l10n),
+                        key: widget.tourTitleKey,
                         style: theme.textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -2168,7 +2341,10 @@ class _KeychainSheetState extends State<KeychainSheet>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // Session Key Section
-                            _buildSessionKeyTile(theme),
+                            KeyedSubtree(
+                              key: widget.tourSessionKey,
+                              child: _buildSessionKeyTile(theme),
+                            ),
                             const SizedBox(height: 16),
 
                             // No divider: spacing separates instead.
@@ -2534,8 +2710,12 @@ class _KeychainSheetState extends State<KeychainSheet>
         widget.onboardingMode == KeychainOnboardingMode.create
             ? null
             : widget.type == KeychainType.xmtp
+                // The loaded key's sim unloads it (not during onboarding,
+                // where the flow is about getting one loaded).
                 ? (isCurrentKey
-                    ? null
+                    ? (widget.onboardingMode == KeychainOnboardingMode.off
+                        ? _unloadKey
+                        : null)
                     : () => _selectKey(label, key['privateKey'] ?? ''))
                 : (isWebSelected ? null : () => _selectWebKey(label));
 
@@ -2725,7 +2905,9 @@ class _KeychainSheetState extends State<KeychainSheet>
               subtitle: context.l10n.keychainToggleXmtpSub,
               value: isCurrentKey,
               onChanged: isCurrentKey
-                  ? null
+                  ? (widget.onboardingMode == KeychainOnboardingMode.off
+                      ? (_) => _unloadKey()
+                      : null)
                   : (_) => _selectKey(label, key['privateKey'] ?? ''),
               tokens: tokens,
             ),

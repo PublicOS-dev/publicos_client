@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:publicos_core/publicos_core.dart';
 
@@ -40,7 +42,10 @@ class CommentSection extends SliverChildBuilderDelegate {
             // Header
             if (index == 0) {
               return _CommentsHeader(
-                count: comments.length,
+                // The total, replies included: the same number the feed shows
+                // on the post. The server's count, or what is loaded when that
+                // is higher (a comment just written here).
+                count: math.max(post.commentsCount ?? 0, _loadedTotal(comments)),
                 sort: commentSort,
                 onSortChanged: onSortChanged,
                 tokens: tokens,
@@ -141,6 +146,10 @@ class CommentSection extends SliverChildBuilderDelegate {
         );
 
 }
+
+/// Every loaded comment and reply, at any depth.
+int _loadedTotal(List<Comment> list) =>
+    list.fold(0, (n, c) => n + 1 + _loadedTotal(c.replies));
 
 /// Glass header rendered above the comment list. Shows the count + a sort
 /// PopupMenuButton.

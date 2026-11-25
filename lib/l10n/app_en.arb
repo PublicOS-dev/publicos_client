@@ -103,6 +103,7 @@
   "errAddWalletFailed": "Couldn't link the wallet.",
   "errCastVoteFailed": "Couldn't cast your vote.",
   "errTranslateFailed": "Couldn't translate this.",
+  "errTranslateDownloadFailed": "Couldn't download the language. Try again.",
   "notifComment": "{name} commented on your post",
   "@notifComment": {"placeholders": {"name": {"type": "String"}}},
   "notifReply": "{name} replied to your comment",
@@ -377,6 +378,33 @@
   "bootErrCoreInit": "Failed to initialize core systems",
   "bootErrAuthNeeded": "Authentication needed to continue",
   "bootErrUnexpected": "An unexpected error occurred during initialization. Please try again.",
+  "lockNoLockTitle": "This phone has no screen lock",
+  "lockNoLockBody": "PublicOS holds the keys to your accounts. We strongly recommend setting a screen lock on this phone.\n\nIf you would rather not, you need to set a 6-digit PIN for PublicOS.",
+  "lockOpenSettings": "OPEN PHONE SETTINGS",
+  "lockIHaveSetLock": "I SET A SCREEN LOCK",
+  "lockSetPinInstead": "SET A PIN INSTEAD",
+  "lockSetPinTitle": "Choose a 6-digit PIN",
+  "lockSetPinBody": "You will type it every time PublicOS opens.\n\nAfter 10 wrong tries PublicOS locks. If it locks, or you forget the PIN, the only way back in is to reset PublicOS on this phone.",
+  "lockConfirmPinTitle": "Type the PIN again",
+  "lockPinMismatch": "The two PINs do not match. Start again.",
+  "lockEnterPinTitle": "Type your PIN",
+  "lockWrongPin": "Wrong PIN. Tries left: {count}.",
+  "@lockWrongPin": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "lockForgotPin": "FORGOT PIN",
+  "lockLockedTitle": "PublicOS is locked",
+  "lockLockedBody": "Too many wrong tries. The only way back in is to reset PublicOS on this phone.",
+  "lockResetButton": "RESET PUBLICOS ON THIS PHONE",
+  "lockResetTitle": "Reset PublicOS on this phone?",
+  "lockResetBody": "This deletes everything PublicOS keeps on this phone: your keys, messages and settings. It cannot be undone.\n\nYour accounts are not deleted. You get back into them the same way you would on a new phone. If this phone holds the only key to an account and you have no backup of it, you lose access to that account.",
+  "lockResetConfirm": "RESET",
+  "lockResetDoneTitle": "PublicOS was reset",
+  "lockResetDoneBody": "Close the app and open it again.",
   "onbPublicosTitle": "PublicOS",
   "onbPublicosSubtitle": "Own your self",
   "onbPublicosBody": "PublicOS is a social platform with its own infrastructure, governance, and economy: a public institution on the internet, owned by the people who use it.\n\nYou get a full domain of your own, a place to post, organize, and monetize any way you want.\n\nEverything runs in the open and is decided by liquid democracy: every rule, every vote, every token, verifiable by anyone.\n\n",
@@ -475,7 +503,9 @@
   "onbTabsAnotherTitle": "Another inbox",
   "onbTabsAnotherSub": "work, public, as many as you like",
   "onbCoachKeychain": "Your keys live in the **keychain**. Open it.",
-  "onbCoachGenerate": "**Generate** a key. It is made on this device and stored nowhere else.",
+  "onbCoachGenerate": "Your messages arrive in an **inbox** outside, and an inbox has its own lock. You can put up as many inboxes as you like. Let's cut the key for your first one.",
+  "onbCoachHouse": "This is your **keychain**. Think of your account as your house. You already have the key to the front door: it's the one marked **SESSION**.",
+  "onbCoachContinue": "Tap anywhere to continue",
   "onbCoachSim": "Now switch it on for messaging, tap the **SIM**. That is what gives the key an inbox, and how you swap keys later.",
   "onbProfileTitle": "YOUR ACCOUNT",
   "onbProfileSubtitle": "Same parts. Already yours.",
@@ -728,6 +758,7 @@
   "keychainDeleteLoadedPhraseTitle": "Did you store the recovery phrase?",
   "keychainDeleteLoadedPhraseBody": "Without the phrase or the private key, this key and the messages tied to it cannot be recovered. This cannot be undone.",
   "keychainKeyDeletedUnloaded": "Key deleted. Messaging is off until you pick a key.",
+  "keychainKeyUnloaded": "Key unloaded. Messaging is off until you load a key.",
   "keychainAddressCopied": "Address copied to clipboard",
   "keychainPrivKeyNotFound": "Private key not found",
   "keychainImportTitle": "Import Key",
@@ -772,7 +803,8 @@
   "keychainOfferRegTitle": "PUBLISH THIS INBOX?",
   "keychainOfferRegBody": "This key is active and has an inbox ID ({id}). Publish it as a tab on your profile so people can message you.",
   "keychainOfferRegLabel": "Tab name",
-  "keychainOfferRegDontAsk": "Don't ask again",
+  "keychainOfferRegDontAsk": "Don't suggest again for any key",
+  "keychainOfferRegKeepPrivate": "Keep private",
   "keychainOfferRegPublish": "PUBLISH",
   "keychainOfferRegLater": "NOT NOW",
   "appSettingsPageInboxPromptTitle": "Offer to publish new inboxes",
@@ -1035,6 +1067,7 @@
   "walletEditLabel": "Edit label",
   "walletEditIcon": "Edit icon",
   "walletActivityTitle": "Activity",
+  "walletWatchOnlyCantSign": "Watch-only wallet: this device doesn't hold its key, so it can't sign.",
   "walletActivityEmpty": "No transactions yet.\nRecent OX transfers will appear here.",
   "walletActivityTxCopied": "Transaction hash copied",
   "walletActivitySentTo": "Sent to",
@@ -2515,6 +2548,13 @@
   "feedsSettingsSheetGroupReactions": "Reactions",
   "feedsSettingsSheetDoubleTapLabel": "DOUBLE TAP ADDS",
   "feedsSettingsSheetDoubleTapHint": "The reaction a double tap on a post adds. Tap to choose.",
+  "feedsSettingsSheetGroupTips": "Tips",
+  "feedsSettingsSheetMyTipLabel": "MY TIP",
+  "feedsSettingsSheetMyTipHint": "Preselected when you tip a post, and what a long press on the tip button sends.",
+  "feedsSettingsSheetQuickTipLabel": "LONG PRESS TO TIP",
+  "feedsSettingsSheetQuickTipOn": "On: hold the tip button to send your tip to the author from your main wallet. Tap again while the ring fills to cancel.",
+  "feedsSettingsSheetQuickTipOff": "Off: the tip button always opens the tip sheet.",
+  "quickTipFailed": "The tip didn't go through.",
   "feedsSettingsSheetGroupSignature": "Signature",
   "feedsSettingsSheetSigShimmerLabel": "SIGNATURE VISUAL CONFIRMATION",
   "feedsSettingsSheetSigShimmerOn": "A verified author's name shimmers in rainbow on its own.",
@@ -2858,6 +2898,7 @@
   "postsListChannelNotFoundSubline": "This channel was deleted or moved by its owner.",
   "postsListChannelNotFoundUnfollow": "Unfollow",
   "postCardFeedContextOn": "on",
+  "postCardFeedContextIn": "in",
   "feedReaderPageUpdated": "updated {ago}",
   "@feedReaderPageUpdated": {
     "placeholders": {
@@ -3204,6 +3245,42 @@
     }
   },
   "messagesSettingsSheetBackupFailed": "Backup failed.",
+  "messagesSettingsSheetSspBackupLabel": "Backup to SSP",
+  "messagesSettingsSheetSspBackupSubtitle": "A copy on your server for 24 hours, to move your chats to another device",
+  "messagesSettingsSheetSspBackupWarning": "This is a short-lived backup. It is held on your server for 24 hours and deleted after that. Messages after this moment are not part of it.\n\nIf you want a long-lived copy, download the database with the other option.",
+  "messagesSettingsSheetSspBackupWorking": "Backing up to your SSP…\n\nThis might take 1 to 2 minutes. Do not leave this screen.",
+  "messagesSettingsSheetSspBackupDoneTitle": "Backup done",
+  "messagesSettingsSheetSspBackupFactInbox": "Inbox",
+  "messagesSettingsSheetSspBackupFactKey": "Key",
+  "messagesSettingsSheetSspBackupFactSize": "Size",
+  "messagesSettingsSheetSspBackupFactDeleted": "Deleted on",
+  "messagesSettingsSheetSspBackupDone": "Backup made. Your server deletes it in 24 hours.",
+  "messagesSettingsSheetSspBackupTooLarge": "Your chat database is over 100 MB, too large for this backup. Download the database with the other option.",
+  "messagesSettingsSheetSspBackupNoSpace": "Not enough space on your server: the backup needs {need} MB and {free} MB are free.",
+  "@messagesSettingsSheetSspBackupNoSpace": {
+    "placeholders": {
+      "need": {"type": "int"},
+      "free": {"type": "int"}
+    }
+  },
+  "keychainSetupRestoreSsp": "Restore from your SSP",
+  "keychainSetupRestoreSspDetail": "Your server holds a backup of this key's chats, made {when}. Keeps your message history and does not use a device slot.",
+  "@keychainSetupRestoreSspDetail": {
+    "placeholders": {
+      "when": {"type": "String"}
+    }
+  },
+  "keychainRestoreSspWorking": "Restoring your chats…\n\nDo not close the app.",
+  "keychainRestoreSspWrongKey": "This key did not make that backup.",
+  "keychainDeleteChatsTitle": "Delete chats too?",
+  "keychainDeleteChatsBody": "Also delete the chats and XMTP data on this device for this key and inbox \"{inbox}\"?\n\nThe same key under another label will also lose them. Without a backup they cannot be brought back.",
+  "@keychainDeleteChatsBody": {
+    "placeholders": {
+      "inbox": {"type": "String"}
+    }
+  },
+  "keychainDeleteChatsKeep": "Keep chats",
+  "keychainDeleteChatsDelete": "Delete chats",
   "messagesSettingsSheetBackupFileTypeLabel": "PublicOS XMTP backup",
   "messagesSettingsSheetCouldNotOpenFile": "Could not open file.",
   "messagesSettingsSheetRestorePasswordMessage": "Enter the password this backup was created with.",
@@ -5003,6 +5080,14 @@
   },
   "contactsViewFailedToRemove": "Failed to remove contact",
   "contactsViewSearchHint": "Search name, address, or inbox",
+  "contactsViewFilterStarred": "Starred",
+  "contactsViewStar": "Star",
+  "contactsViewUnstar": "Remove star",
+  "contactsViewNoStarred": "No starred contacts yet. Turn off Starred to see everyone.",
+  "notificationsScreenStarredNote": "Only starred contacts raise chain notifications.",
+  "browserEditProfile": "Edit profile",
+  "browserStopEditing": "Stop editing",
+  "browserStarTooltip": "Star: get chain notifications about this contact",
   "contactsViewFilterPersonal": "Personal",
   "contactsViewFilterOrgs": "Orgs",
   "contactsViewSortAsc": "A-Z",
@@ -5046,6 +5131,10 @@
   "messagesViewNoKeysTitle": "Get your inbox started",
   "messagesViewNoKeysSubtitleBefore": "Sign in with one of your keys using the ",
   "messagesViewNoKeysSubtitleAfter": " button in the keychain.",
+  "chatNoKeyTitle": "Load a key into XMTP to start messaging",
+  "@chatNoKeyTitle": {
+    "description": "Chat tab with no XMTP inbox loaded: shown under a sim icon instead of the conversation and its input. Tapping opens the keychain."
+  },
   "manageChannelPageManageLabel": "manage",
   "manageChannelPageMissingServerInfo": "Channel is missing server info — can't build URL",
   "manageChannelPageExportUrlCopied": "{label} URL copied",
@@ -6036,6 +6125,14 @@
   "channelHeaderOwner": "Owner",
   "channelHeaderBy": "by",
   "channelHeaderHostedBy": "hosted by",
+  "channelHostedByCopy": "a copy",
+  "channelHostNoSigTitle": "NO OWNER SIGNATURE",
+  "channelHostNoSigExplain": "There is no owner's signature to check, so we cannot confirm who hosts this feed.",
+  "channelHostBadSigTitle": "BAD OWNER SIGNATURE",
+  "channelHostBadSigExplain": "A signature is given for the owner, and it is bad. We cannot confirm the claimed owner ever agreed to host this feed.",
+  "signedCopyTitle": "SIGNED COPY",
+  "signedCopyPostExplain": "A signed copy of the original post. Every field and signature is correct; it is being read here from another address than the one the author signed.",
+  "signedCopyChannelExplain": "The owner signed this channel at another address. This is a signed copy of it.",
   "channelHeaderVerifiedReadersWord": "{count, plural, =1{verified reader} other{verified readers}}",
   "@channelHeaderVerifiedReadersWord": {
     "placeholders": {
@@ -6167,6 +6264,11 @@
   "chsPostOpenSub": "Open submissions.",
   "chsPostApproved": "Only people I approve",
   "chsPostApprovedSub": "A list just for posting.",
+  "chsSubLayout": "How it looks",
+  "chsLayoutFeed": "Feed",
+  "chsLayoutFeedSub": "Newest first, no votes.",
+  "chsLayoutForum": "Forum",
+  "chsLayoutForumSub": "Votes, and sorting by New, Top, Hot.",
   "chsPostFilterGrp": "This filter binds accounts. A wallet you added to the posting list skips it — your hand is what vouches for a nameless key.",
   "chsPostDailyLimit": "Daily limit per person",
   "chsPostDailyLimitSub": "0 = no limit",
@@ -6519,6 +6621,10 @@
   "@desktopAutoplayCardsSubtitle": {
     "description": "publicos_desktop Settings › Appearance toggle subtitle."
   },
+  "desktopSettingsAppearanceTitle": "Appearance",
+  "@desktopSettingsAppearanceTitle": {
+    "description": "publicos_desktop Settings › Appearance section title."
+  },
   "desktopLogOut": "LOG OUT",
   "@desktopLogOut": {
     "description": "publicos_desktop Settings footer button."
@@ -6758,6 +6864,10 @@
   "desktopBubbleColorSection": "BUBBLE COLOR",
   "@desktopBubbleColorSection": {
     "description": "publicos_desktop chat appearance dialog section label (upper-case)."
+  },
+  "desktopBubbleColorIdentityNote": "\"Identity\" uses each account's Color record, the same color as its domain address bar. Set yours in the Account app, or override it here.",
+  "@desktopBubbleColorIdentityNote": {
+    "description": "publicos_desktop chat settings dialog: small note under the BUBBLE COLOR label explaining the Identity default chip."
   },
   "desktopAutoLabel": "Auto",
   "@desktopAutoLabel": {
@@ -7713,8 +7823,8 @@
   "postSigTitleUnchecked": "NOT CHECKED",
   "postSigThisPost": "(this post)",
   "postSigExplainChecked": "Signed. The author signed the text and media with their key, and this device checked that nothing changed since.",
-  "postSigExplainUnsigned": "Not signed. The author chose not to sign, so only the server vouches for who wrote it and what it said.",
-  "postSigExplainBad": "Bad signature. The signature does not match the content or the signer. The post may have been altered after signing.",
+  "postSigExplainUnsigned": "Not signed. There is no signature to check, so we cannot confirm who wrote this.",
+  "postSigExplainBad": "Bad signature. A signature is given, and it does not match this post.",
   "postSigExplainUnchecked": "Not checked. The signature matches the content on this device, but the chain could not be reached to confirm whose key signed it. Try again later.",
   "postSigEncourage": "Signed posts are the norm here: sign yours so readers can check them anywhere.",
   "postSigDialogClose": "Got it",

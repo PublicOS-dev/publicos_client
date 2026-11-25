@@ -14,6 +14,7 @@ import 'package:publicos_client/theme/glass_theme.dart';
 import 'package:wallet/wallet.dart';
 import 'package:publicos_client/router.dart';
 import 'package:publicos_client/components/transactions/wallet_sources.dart';
+import 'package:publicos_client/components/transactions/quick_tip.dart' show TipPrefs, TipSentCallback;
 import 'package:publicos_client/l10n/l10n_ext.dart';
 
 enum SendStep { selectActor, search, amount }
@@ -102,8 +103,17 @@ class SendSheetConfig {
   /// searchAny origin seed (wallet).
   final EthereumAddress? feedFoundAtAccountAddress;
   final String? originatingWalletAddress;
+  /// A post tip: the amount row shows 0.01 · 0.1 · 1 · ★ my tip instead of
+  /// 25/50/75 %/Max, and opens on my tip.
+  final bool isTip;
+  /// A post tip's "sent" moment: replaces the success snackbar, the tip button
+  /// plays its burst. Not called for an org-wallet send (that starts a vote,
+  /// its snackbar stays).
+  final TipSentCallback? onTipSent;
 
   const SendSheetConfig({
+    this.isTip = false,
+    this.onTipSent,
     this.targetMode = SendTargetMode.searchAny,
     this.candidates = const [],
     this.title,
@@ -219,6 +229,15 @@ class _SendSheetState extends State<SendSheet> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    // A post tip opens on my tip (the ★ chip), not an empty field.
+    if (widget.config.isTip) {
+      _amountController.text = TipPrefs.format(TipPrefs.amountSync);
+      TipPrefs.amount().then((a) {
+        if (mounted && _amountController.text.isNotEmpty) {
+          setState(() => _amountController.text = TipPrefs.format(a));
+        }
+      });
+    }
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -1279,12 +1298,16 @@ class _SendSheetState extends State<SendSheet> with TickerProviderStateMixin {
 
         if (mounted) {
           navigator.pop();
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(l10n.unifiedSendSheetTransactionSent),
-              backgroundColor: Colors.green,
-            ),
-          );
+          if (widget.config.onTipSent != null) {
+            widget.config.onTipSent!(amountStr, _selectedToken.symbol);
+          } else {
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(l10n.unifiedSendSheetTransactionSent),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
         }
       } else {
         // Safe wallet (personal or group)
@@ -1310,6 +1333,8 @@ class _SendSheetState extends State<SendSheet> with TickerProviderStateMixin {
                 duration: const Duration(seconds: 4),
               ),
             );
+          } else if (widget.config.onTipSent != null) {
+            widget.config.onTipSent!(amountStr, _selectedToken.symbol);
           } else {
             // For individual accounts, show transaction completed
             messenger.showSnackBar(
@@ -2439,6 +2464,19 @@ class _SendSheetState extends State<SendSheet> with TickerProviderStateMixin {
           if (widget.config.requestedAmount != null &&
               widget.config.tipChips.isNotEmpty)
             _buildTipChips(tokens)
+          else if (widget.config.isTip)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Row(
+                children: [
+                  for (final a in TipPrefs.sheetChips)
+                    _buildTipAmountButton(tokens, TipPrefs.format(a), a),
+                  _buildTipAmountButton(
+                      tokens, '★ ${TipPrefs.format(TipPrefs.amountSync)}',
+                      TipPrefs.amountSync),
+                ],
+              ),
+            )
           else
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -2498,6 +2536,48 @@ class _SendSheetState extends State<SendSheet> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+
+  /// A fixed-amount tip chip; lit while the typed amount equals it.
+  Widget _buildTipAmountButton(GlassTokens tokens, String label, double amount) {
+    final typed = double.tryParse(_amountController.text.trim());
+    final on = typed != null && (typed - amount).abs() < 1e-9;
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              final s = TipPrefs.format(amount);
+              setState(() => _amountController.text = s);
+              _validateAmount(s);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: on ? tokens.neonAccent.withValues(alpha: 0.16) : tokens.glassFill,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: on ? tokens.neonAccent : tokens.borderSubtle, width: 1),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: 'SpaceGrotesk',
+                  color: tokens.starkWhite,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

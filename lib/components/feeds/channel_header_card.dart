@@ -4,6 +4,8 @@ import 'package:publicos_core/publicos_core.dart';
 import 'package:publicos_client/components/glass_contact_icon.dart';
 import 'package:publicos_client/components/members_stack.dart';
 import 'package:publicos_client/components/org_management/members_sheet.dart';
+import 'package:publicos_client/widgets/post_signature_mark.dart'
+    show ChannelHostMark, SignedCopyBadge;
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/router_helpers.dart';
 import 'package:publicos_client/theme/glass_theme.dart';
@@ -63,6 +65,11 @@ class ChannelHeaderCard extends StatelessWidget {
   final String? updatedAgo;
   final String? language;
 
+  /// The channel's (or its feed's) address. With it, "hosted by [owner]" in the
+  /// credits follows the owner's claim on the channel; without it the credits
+  /// read as before.
+  final String? channelUrl;
+
   const ChannelHeaderCard({
     super.key,
     required this.description,
@@ -75,6 +82,7 @@ class ChannelHeaderCard extends StatelessWidget {
     this.siteUrl,
     this.updatedAgo,
     this.language,
+    this.channelUrl,
     this.onFlag,
   });
 
@@ -155,6 +163,7 @@ class ChannelHeaderCard extends StatelessWidget {
               owner: owner!,
               writers: writers,
               ownerWrites: ownerWrites,
+              channelUrl: channelUrl,
               tokens: tokens,
             ),
           if ((hasDesc || hasDetails || owner != null) &&
@@ -275,12 +284,14 @@ class _CreditsLine extends StatelessWidget {
   final Contact owner;
   final List<Contact> writers;
   final bool ownerWrites;
+  final String? channelUrl;
   final GlassTokens tokens;
 
   const _CreditsLine({
     required this.owner,
     required this.writers,
     required this.ownerWrites,
+    this.channelUrl,
     required this.tokens,
   });
 
@@ -317,9 +328,28 @@ class _CreditsLine extends StatelessWidget {
         child: child,
       );
 
+  /// "hosted by [owner]" is the owner's claim on the channel, checked
+  /// (ChannelClaims): a good one, "hosted by"; none, no host and an amber
+  /// `!`; a bad one, no host and a red `!`; one that names another address,
+  /// "hosted by" and the signed-copy shield; not checkable, nothing. "by
+  /// [owner]" is about who writes, and stays.
   @override
   Widget build(BuildContext context) {
+    final url = channelUrl;
+    final verdict = url == null ? null : ChannelClaims.verdictForUrl(url);
+    // No address to check against: the credits read as they always did.
+    if (verdict == null) return _line(context, ChannelClaimState.good);
+    return FutureBuilder<ChannelClaimVerdict>(
+      future: verdict,
+      builder: (context, snap) =>
+          _line(context, snap.data?.state ?? ChannelClaimState.unknown),
+    );
+  }
+
+  Widget _line(BuildContext context, ChannelClaimState claim) {
     final l10n = context.l10n;
+    final hosted = claim == ChannelClaimState.good ||
+        claim == ChannelClaimState.copy;
     final ownerChip = _tap(
       () => AppNav.toContact(context, owner),
       Row(
@@ -331,6 +361,14 @@ class _CreditsLine extends StatelessWidget {
         ],
       ),
     );
+    // No host is named without a good claim: an amber `!` when there is no
+    // owner's signature to check, a red one when one is given and is bad. A
+    // good claim that names another address is a signed copy: the shield.
+    final marks = <Widget>[
+      if (claim == ChannelClaimState.copy) const SignedCopyBadge(channel: true),
+      if (claim == ChannelClaimState.none) const ChannelHostMark(bad: false),
+      if (claim == ChannelClaimState.bad) const ChannelHostMark(bad: true),
+    ];
     final children = <Widget>[];
     if (writers.isNotEmpty) {
       final first = writers.first;
@@ -354,18 +392,28 @@ class _CreditsLine extends StatelessWidget {
             style: _name,
           ),
         ),
-        Text('·  ${l10n.channelHeaderHostedBy}', style: _word),
+        if (hosted) ...[
+          Text('·  ${l10n.channelHeaderHostedBy}', style: _word),
+          ownerChip,
+        ],
+        ...marks,
+      ]);
+    } else if (ownerWrites) {
+      children.addAll([
+        Text(l10n.channelHeaderBy, style: _word),
         ownerChip,
+        ...marks,
       ]);
     } else {
       children.addAll([
-        Text(
-          ownerWrites ? l10n.channelHeaderBy : l10n.channelHeaderHostedBy,
-          style: _word,
-        ),
-        ownerChip,
+        if (hosted) ...[
+          Text(l10n.channelHeaderHostedBy, style: _word),
+          ownerChip,
+        ],
+        ...marks,
       ]);
     }
+    if (children.isEmpty) return const SizedBox.shrink();
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 6,

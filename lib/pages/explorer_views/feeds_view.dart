@@ -343,7 +343,8 @@ class RssFeedsViewState extends State<RssFeedsView>
           final records =
               await PublicOSContacts.getRecordsByType(RecordType.router);
           for (final r in records) {
-            if (r.routerSubtype == RouterSubtype.channel && r.value == url) {
+            if (r.routerSubtype == RouterSubtype.channel &&
+                feedUrlKey(r.value) == feedUrlKey(url)) {
               tabKey = r.key;
               break;
             }
@@ -734,6 +735,20 @@ class RssFeedsViewState extends State<RssFeedsView>
   /// Feeds button (a hamburger while Feeds is showing) is tapped again.
   void toggleDrawer() => _toggleDrawer();
 
+  /// Show the reader's landing (Reading settings → Landing), if it is not
+  /// showing already. Returns true when the selection CHANGED, false when the
+  /// tab was already there (or has nothing to land on). The shell calls it on a
+  /// system back: back goes home first, and only home offers the exit.
+  Future<bool> goToLanding() async {
+    final target =
+        FeedsNavPrefs.resolveLanding(await FeedsNavPrefs.landing(), _lists);
+    if (!mounted || target == null || _sameSelection(_selected, target)) {
+      return false;
+    }
+    _select(target);
+    return true;
+  }
+
   Future<void> _loadData({bool silent = false}) async {
     if (!mounted) return;
 
@@ -1100,6 +1115,16 @@ class RssFeedsViewState extends State<RssFeedsView>
         scrollController: _scrollController,
         showFullScreenLoader: false,
         onLoadingChanged: _onPostsLoadingChanged,
+        // Explore loads like a feed: the hint and Latest's "N new" chip go
+        // to the same header slots a list uses.
+        onHeldDocked: (w) {
+          if (!mounted) return;
+          setState(() => _dockedNewChip = w);
+        },
+        onRefreshingChanged: (v) {
+          if (!mounted || _postsRefreshing == v) return;
+          setState(() => _postsRefreshing = v);
+        },
       );
     }
     if (_isViewingBookmarks) {

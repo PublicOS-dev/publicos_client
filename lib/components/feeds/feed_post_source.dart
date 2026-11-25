@@ -1,15 +1,15 @@
 // FeedPostSource — posts from a roster of feeds.
 //
-// Everything about FETCHING posts lives here, on the roster model. The
-// source takes a roster of [FeedSource]s and FETCHES — it knows nothing about lists, follows, or
-// resolution (the HOST derives the roster and hands a new one on any roster
-// mutation). Every url is fetched through the one Core path, cache-first;
-// single-feed affordances (header, sort chips, private gate,
+// Everything PostsList did about FETCHING, moved here as is: roster model. The
+// source takes a roster of [FeedSource]s and FETCHES — it knows nothing about
+// lists, follows, or resolution (the HOST derives the roster and hands a new
+// one on any roster mutation). Every url is fetched through the one Core path,
+// cache-first (Q6); single-feed affordances (header, sort chips, private gate,
 // pagination, compose) fire on `feeds.length == 1` and are driven by the
 // RESPONSE (description / stats / postingPolicy / hasMore), never by who
-// constructed the source. List verbs (mute / remove / locked banner /
-// per-card "feed · via") fire on `listId != null`. Bookmarks are not a feed —
-// see BookmarkPostSource.
+// constructed the source. List verbs (mute / remove / locked banner / per-card
+// "feed · via") fire on `listId != null`. Bookmarks are not a feed — see
+// BookmarkPostSource.
 
 import 'dart:async';
 
@@ -41,12 +41,12 @@ import 'package:publicos_client/utils/feed_metadata_utils.dart';
 ///
 /// It has to be an explicit list because `RssParser` substitutes the response
 /// body's `error.code` for the HTTP status, so a 403 refusal never presents as
-/// HTTP_403 — matching on status alone silently misses every one of them,
-/// and a gate such as VERIFIED_ONLY or PAYWALL_DENIED would render as a raw
-/// error.
+/// HTTP_403 — matching on status alone silently misses every one of them. That
+/// is exactly how VERIFIED_ONLY and PAYWALL_DENIED came to render as raw
+/// errors.
 ///
-/// The server's authorization ladder defines these codes. Add a rung there,
-/// add its code here.
+/// Server canon: `internal/handlers/authorize.go`. Add a rung there, add its
+/// code here.
 const List<String> kGateRefusalCodes = <String>[
   'PRIVATE_FEED',              // banned, or not on an enabled list (masked)
   'PRIVATE_FEED_NOT_APPROVED', // not on an enabled list
@@ -73,23 +73,23 @@ class FeedPostSource extends PostSource {
 
   /// Allow the compose FAB. The FAB itself lights only when the surface is a
   /// single feed THIS reader may post in: the server's per-reader `can_post`
-  /// when it answered (signed reads), else `posting_policy == open` (it
-  /// lights from the browser door too). An `approved`
-  /// channel the reader is on the posters list of lights it as well.
+  /// when it answered (signed reads), else `posting_policy == open` (Q4: it
+  /// lights from the browser door too). an `approved` channel the reader is on
+  /// the posters list of lights it as well.
   bool showNewPostButton;
 
   /// Told whenever the compose FAB appears or goes, so a host with its own
   /// post button (the Feeds tab) can step aside while this one shows.
   ValueChanged<bool>? onComposeAvailable;
 
-  /// A list's header: who the list follows, opening "Manage
-  /// [list]". Built by the host with the layout's inset, it takes the
-  /// channel description's slot, so a list never shows one feed's description.
+  /// A list's header: who the list follows, opening "Manage [list]". Built by
+  /// the host with the layout's inset, it takes the channel description's slot,
+  /// so a list never shows one feed's description.
   Widget Function(double leftInset)? listHeader;
 
-  /// The "Unfollow" button on the Channel-not-found screen.
-  /// Null → the screen shows no button (a
-  /// standalone channel pick or browser tab has nothing to unfollow here).
+  /// The "Unfollow" button on the Channel-not-found screen. Null → the screen
+  /// shows no button (a standalone channel pick or browser tab has nothing to
+  /// unfollow here).
   VoidCallback? onUnfollowGone;
 
   FeedPostSource({
@@ -109,9 +109,9 @@ class FeedPostSource extends PostSource {
   String? _error;
   bool _isPrivateFeed = false;
 
-  /// The single feed no longer exists — its owner deleted it (the source
-  /// says so) or the server answered 404. Renders "Channel not found", never
-  /// a stale cached copy.
+  /// The single feed no longer exists — its owner deleted it (the source says
+  /// so) or the server answered 404. Renders "Channel not found", never a stale
+  /// cached copy.
   bool _gone = false;
 
   /// Which gate refused (one of [kGateRefusalCodes]), so the locked body can
@@ -119,8 +119,8 @@ class FeedPostSource extends PostSource {
   /// the host-facing bool; this is what picks the screen.
   String? _gateCode;
 
-  /// The typed paywall refusal, kept intact — entries + lapsed_at are the
-  /// pay sheet's whole input. Stringifying it would throw them away.
+  /// The typed paywall refusal, kept intact — entries + lapsed_at are the pay
+  /// sheet's whole input. Stringifying it threw them away.
   PaywallException? _paywall;
 
   /// The channel object the server attached to a refusal (`error.channel`,
@@ -129,8 +129,8 @@ class FeedPostSource extends PostSource {
   /// the locks then resolve on their own.
   Channel? _gateChannel;
 
-  /// The sign-in row for the single feed, re-read after every load — what
-  /// the ask and the SIGNIN_REQUIRED body branch on.
+  /// The sign-in row for the single feed, re-read after every load — what the
+  /// ask and the SIGNIN_REQUIRED body branch on.
   ChannelSigninPref? _signinPref;
 
   /// Channels asked during THIS source's life. A dismissed dialog leaves
@@ -160,6 +160,10 @@ class FeedPostSource extends PostSource {
   String? _language;
   ChannelStats? _stats;
   String? _postingPolicy;
+
+  /// The channel's `layout` as the server sent it (null from an older
+  /// server); read through [channelLayoutOf] with [_postingPolicy].
+  String? _layout;
   // The server's per-reader "you may post here" (`channel.can_post`, signed
   // interactions only). Null = not asked; then the policy decides.
   bool? _canPost;
@@ -206,11 +210,10 @@ class FeedPostSource extends PostSource {
 
   bool get _isSingleSurface => _singleFeed != null;
 
-  /// Forum-ness comes from the fetch result (`_publicos.posting_policy`),
-  /// never from the URL shape or the first post. `approved` is a forum too
-  /// (several authors: its posters list).
-  bool get _isForum =>
-      _postingPolicy == 'open' || _postingPolicy == 'approved';
+  /// The forum look (sort bar, votes) is the owner's `layout` from the fetch
+  /// result, never who may post, the URL shape or the first post. No layout
+  /// sent = feed.
+  bool get _isForum => channelLayoutOf(_layout) == ChannelLayouts.forum;
 
   bool get _showSortBar => _isForum && _isSingleSurface;
 
@@ -259,13 +262,12 @@ class FeedPostSource extends PostSource {
   /// remove a feed, add one) and comes back to it. The deck they were reading
   /// stays where it is: posts of feeds that left are taken out, the feeds that
   /// arrived are fetched on their own and their posts slotted in by date. No
-  /// reload, no loader, no scroll reset: the deck is never rebuilt, so the
-  /// reader's screen does not flicker.
+  /// reload, no loader, no scroll reset.
   ///
   /// Only a settled multi-feed list surface patches. A roster going to or from
-  /// one feed changes SHAPE (the one-feed path paginates and carries the
-  /// feed's header), and a surface still loading, erroring or gated has no
-  /// deck to keep, so those take the full load.
+  /// one feed changes SHAPE (the one-feed path paginates and carries the feed's
+  /// header), and a surface still loading, erroring or gated has no deck to
+  /// keep, so those take the full load.
   void setRoster(List<FeedSource> newFeeds, {required int? listId}) {
     final changed = this.listId != listId ||
         !listEquals(
@@ -340,7 +342,7 @@ class FeedPostSource extends PostSource {
       }
     } catch (_) {
       // The new feed contributes nothing this time, like a failed feed in a
-      // roster load; the deck is untouched.
+      // roster load (spec §05); the deck is untouched.
     } finally {
       if (!isDisposed && gen == _loadGeneration) _setRefreshing(false);
     }
@@ -397,7 +399,7 @@ class FeedPostSource extends PostSource {
     if (!isDisposed) host?.scrollToTop();
   }
 
-  /// Pull-to-refresh = re-fetch the held urls ONLY. Roster changes
+  /// Pull-to-refresh = re-fetch the held urls ONLY (D3). Roster changes
   /// arrive through [setRoster], never from in here.
   @override
   Future<void> load() async {
@@ -420,6 +422,7 @@ class FeedPostSource extends PostSource {
     _language = null;
     _stats = null;
     _postingPolicy = null;
+    _layout = null;
     _canPost = null;
     _channelIsPrivate = null;
     changed();
@@ -456,8 +459,8 @@ class FeedPostSource extends PostSource {
           channelStubFromFeedUrl(_singleFeed!.url) != null;
       // Keep the TYPED refusal when the fetch surfaced one; otherwise derive
       // the code from the message the same way the boolean below does.
-      // PaywallException IS a FeedGateException; the 401-with-a-key is its
-      // own type.
+      // PaywallException IS a FeedGateException; the 401-with-a-key is its own
+      // type.
       final paywall = e is PaywallException ? e : null;
       final gate = e is FeedGateException ? e : null;
       final signin = e is FeedSigninRequired;
@@ -471,9 +474,10 @@ class FeedPostSource extends PostSource {
       // The codes are matched EXPLICITLY rather than by HTTP status, because
       // RssParser substitutes the body's `error.code` for the HTTP code — so
       // a refusal never actually presents as HTTP_403 and any gate code this
-      // list omits falls through to a raw error screen: a real gate
-      // rendering as "something went wrong". The set is therefore named in
-      // one place ([kGateRefusalCodes]) instead of guessed at.
+      // list omits falls through to a raw error screen. That is what happened
+      // to VERIFIED_ONLY and PAYWALL_DENIED: real gates rendering as
+      // "something went wrong". The identity ladder added three more, so the
+      // set is now named in one place instead of guessed at.
       _isPrivateFeed = signin ||
           s.contains('PRIVATE_FEED') ||
           (isChannelUrl &&
@@ -492,9 +496,7 @@ class FeedPostSource extends PostSource {
       // leaves the follow-up to the owner.
       if (!isDisposed && gen == _loadGeneration) {
         // The sign-in row is re-read after EVERY settled load — served or
-        // refused — and the ask fires from here (the browser renders this
-        // list with no feed header, so the one asker lives in the source,
-        // not the header).
+        // refused — and the ask fires from here.
         unawaited(_refreshSigninAndMaybeAsk());
       }
     }
@@ -503,7 +505,7 @@ class FeedPostSource extends PostSource {
   /// Re-read the sign-in row for the single feed; ask ONCE per source life
   /// when a key is loaded, the reader-wide default is OFF, the channel has
   /// signalled (row exists) and the user has not answered (`decision` null).
-  /// Rosters never ask. Core never asks — it only hands the row.
+  /// Rosters never ask (Q2). Core never asks (D6) — it only hands the row.
   Future<void> _refreshSigninAndMaybeAsk() async {
     final feed = _singleFeed;
     if (feed == null) return;
@@ -530,6 +532,7 @@ class FeedPostSource extends PostSource {
     _language = r.language;
     _stats = r.stats;
     _postingPolicy = r.postingPolicy;
+    _layout = r.layout;
     // Per reader, never cached: keep the last answer through a cache paint.
     _canPost = r.canPost ?? _canPost;
     _channelIsPrivate = r.isPrivate;
@@ -537,7 +540,7 @@ class FeedPostSource extends PostSource {
     _gateChannel = r.channel;
   }
 
-  /// **Single feed — two-phase, cached** (everything caches; the bare
+  /// **Single feed — two-phase, cached** (Q6: everything caches; the bare
   /// first-page default-sort fetch rides the cache, a non-default sort goes
   /// straight to the server, uncached).
   Future<void> _loadSingle(FeedSource feed, int gen) async {
@@ -566,9 +569,9 @@ class FeedPostSource extends PostSource {
       return;
     }
 
-    // Phase 2 starts now, alongside the disk read, and is awaited below.
-    // A newer load can return early and leave it unawaited, so
-    // its failure is marked handled here; the await below still sees it.
+    // Phase 2 starts now, alongside the disk read, and is awaited below. A
+    // newer load can return early and leave it unawaited, so its failure is
+    // marked handled here; the await below still sees it.
     final freshing = PublicOSFeedLists.refreshPostsForFeed(
       feed.url,
       feedFoundAtAccountAddress: foundAtAddr,
@@ -599,6 +602,7 @@ class FeedPostSource extends PostSource {
       _language = cached.language;
       _stats = cached.stats;
       _postingPolicy = cached.postingPolicy;
+      _layout = cached.layout;
       _channelIsPrivate = cached.isPrivate;
       _hasMore = cached.hasMore;
       _isLoading = false; // the reader can start reading NOW
@@ -628,12 +632,12 @@ class FeedPostSource extends PostSource {
       debugPrint('[FeedDiag] single phase2 url=${feed.url} THREW $e');
       if (isDisposed || gen != _loadGeneration) return;
       _setRefreshing(false);
-      // Warm: keep the cached copy on screen — stale beats empty. Cold:
-      // rethrow so `load` surfaces the private-feed gate / error.
-      // EXCEPT a REFUSAL, warm or cold: the server just said "you may not
-      // read this", and a stale (possibly signed) body would contradict it
-      // (e.g. Deny on a paid channel must not leave the feed visible).
-      // And never on GONE: the feed no longer exists.
+      // Warm: keep the cached copy on screen — stale beats empty. Cold: rethrow
+      // so `load` surfaces the private-feed gate / error. EXCEPT a REFUSAL,
+      // warm or cold: the server just said "you may not read this", and a stale
+      // (possibly signed) body would contradict it. Found on device Deny on a
+      // paid channel left the feed visible. And never on GONE: the feed no
+      // longer exists.
       if (hadCache &&
           !PublicOSFeedLists.isFeedRefusal(e) &&
           e is! FeedGoneException) {
@@ -678,12 +682,12 @@ class FeedPostSource extends PostSource {
       return;
     }
 
-    // New posts arrived while the user was reading — offer, don't inject.
-    // The header metadata updates in place (it sits above the reading
-    // position only at the very top, where the chip lands anyway), and so do
-    // the posts already on screen: they take their refreshed
-    // counts now, same rows, same height, so the reading position holds and
-    // only the genuinely new rows wait behind the chip.
+    // New posts arrived while the user was reading — offer, don't inject. The
+    // header metadata updates in place (it sits above the reading position only
+    // at the very top, where the chip lands anyway), and so do the posts
+    // already on screen: they take their refreshed counts now, same rows, same
+    // height, so the reading position holds and only the genuinely new rows
+    // wait behind the chip.
     _posts = _refreshShown(_posts, fresh.posts);
     _pending = fresh;
     _applyResultMetadata(fresh);
@@ -702,15 +706,15 @@ class FeedPostSource extends PostSource {
   /// **Merged roster — two-phase, cached**.
   ///
   /// Phase 1 paints whatever is on disk — instantly, no network. Phase 2
-  /// revalidates every feed with an HTTP conditional GET behind the reader
-  /// and, if anything new arrived, **offers** it via a chip rather than
-  /// injecting it. No single-feed header, by design — a merged list has no
-  /// single feed to describe.
+  /// revalidates every feed with an HTTP conditional GET behind the reader and,
+  /// if anything new arrived, **offers** it via a chip rather than injecting
+  /// it. No single-feed header, by design — a merged list has no single feed to
+  /// describe.
   Future<void> _loadMany(List<FeedSource> feeds, int gen) async {
     final listFeeds = feeds.map(_toListFeed).toList();
 
-    // Phase 2 starts now, alongside the disk read, and is awaited below.
-    // It never throws.
+    // Phase 2 starts now, alongside the disk read, and is awaited below. It
+    // never throws.
     final freshing = PublicOSFeedLists.refreshPostsForFeeds(listFeeds);
 
     // ── Phase 1 — cache. Disk only; typically a few ms. ────────────────────
@@ -744,7 +748,7 @@ class FeedPostSource extends PostSource {
 
     // Nothing came back at all (offline, every feed failed) — keep showing the
     // cached copy. Degrading to stale beats degrading to empty. A feed whose
-    // fetch fails contributes nothing — its posts are simply absent.
+    // fetch fails contributes nothing — its posts are simply absent (spec §05).
     if (fresh.posts.isEmpty && hadCache) {
       if (iconsChanged) changed();
       return;
@@ -814,8 +818,8 @@ class FeedPostSource extends PostSource {
   }
 
   /// Pagination — a single-feed capability, enabled by the response's
-  /// `hasMore` (honored ONLY when the roster has exactly one entry).
-  /// Pages go straight to the server, uncached.
+  /// `hasMore` (spec: honored ONLY when the roster has exactly one entry).
+  /// Pages go straight to the server, uncached (Q6).
   @override
   bool get canLoadMore =>
       _singleFeed != null && _hasMore && !_loadingMore && !_isLoading;
@@ -882,7 +886,7 @@ class FeedPostSource extends PostSource {
   }
 
   /// Owner/slug/server for a vote — a non-fetch job, so the URL stub is fair
-  /// game. Prefer the post's OWN feed url (correct per-feed server in a
+  /// game (D5). Prefer the post's OWN feed url (correct per-feed server in a
   /// merged roster); fall back to the stamped post fields.
   ({String owner, String slug, String? server})? _voteOwnerSlug(Post post) {
     final feedUrl = post.feedUrl ?? _singleFeed?.url;
@@ -906,7 +910,7 @@ class FeedPostSource extends PostSource {
 
   // -----------------------------------------------------------------------
   // COMPOSE — lit by the response (can_post, else posting_policy == open),
-  // any door
+  // any door (Q4)
   // -----------------------------------------------------------------------
 
   Channel? get _composeTarget {
@@ -947,7 +951,7 @@ class FeedPostSource extends PostSource {
   @override
   Widget? floatingAction(BuildContext context) {
     // Compose lights when the DATA says this reader may post here — any
-    // door. The host can suppress it via showNewPostButton.
+    // door (Q4). The host can suppress it via showNewPostButton.
     final canCompose = showNewPostButton && _readerMayPost;
     if (_lastComposeReported != canCompose && onComposeAvailable != null) {
       _lastComposeReported = canCompose;
@@ -1019,6 +1023,53 @@ class FeedPostSource extends PostSource {
     }
   }
 
+  /// The private-feeds banner's quick action: unfollow every locked channel of
+  /// this list, one by one. A followed account's channel is muted (the account
+  /// stays followed, the channel can be turned back on from the list manager);
+  /// a hand-added feed is removed from the list. With none left locked, the
+  /// banner goes away.
+  Future<void> _unfollowLockedChannels(BuildContext context) async {
+    final session = PublicOS.sessionBlockchainAddress;
+    final listId = this.listId;
+    if (listId == null) return;
+    final l10n = context.l10n;
+    final done = <String>{};
+    Object? failure;
+    for (final url in _lockedFeedUrls.toList()) {
+      final origin = _sourceByUrl[url]?.origin;
+      try {
+        if (origin is AccountFeedOrigin && session != null) {
+          await PublicOS.database.muteChannel(
+            session: session,
+            account: origin.accountAddress,
+            listId: listId,
+            recordKey: origin.recordKey,
+          );
+          done.add(url);
+        } else if (origin is ListRowFeedOrigin) {
+          final listFeedId = origin.listFeedId;
+          if (listFeedId == null || listFeedId == -1) continue;
+          if (await PublicOSFeedLists.removeFeedFromList(listId, listFeedId)) {
+            done.add(url);
+          }
+        }
+      } catch (e) {
+        failure = e;
+      }
+    }
+    if (isDisposed) return;
+    if (done.isNotEmpty) {
+      final names = [for (final url in done) _sourceByUrl[url]?.title ?? url];
+      _removedUrls.addAll(done);
+      _posts = _posts.where((post) => !done.contains(post.feedUrl)).toList();
+      _lockedFeedUrls = _lockedFeedUrls.difference(done);
+      changed();
+      _snack(l10n.postsListChannelMuted(names.join(', ')));
+    } else if (failure != null) {
+      _snack(localizedError(l10n, failure));
+    }
+  }
+
   // -----------------------------------------------------------------------
   // REMOVE FEED FROM LIST (hand-added row in a list roster)
   // -----------------------------------------------------------------------
@@ -1076,7 +1127,7 @@ class FeedPostSource extends PostSource {
           _effectiveFeeds.first.url == post.feedUrl),
       // Account-origin (a followed account's channel) → "Mute channel";
       // list-row origin → "Remove from list". Mutually exclusive, driven by
-      // the post's OWN FeedSource origin; both need a list surface (a
+      // the post's OWN FeedSource origin; both need a list surface (Q5: a
       // one-feed list keeps its verbs alongside the feed's own header).
       onMuteChannel: _isListSurface && origin is AccountFeedOrigin
           ? (url) => _muteChannel(context, url)
@@ -1094,7 +1145,11 @@ class FeedPostSource extends PostSource {
   @override
   Widget? bannerSlot(BuildContext context) {
     if (!(_isMultiFeed && _lockedFeedUrls.isNotEmpty)) return null;
-    return _PrivateFeedsBanner(tokens: GlassTokens.of(context));
+    return _PrivateFeedsBanner(
+      tokens: GlassTokens.of(context),
+      onUnfollow:
+          _isListSurface ? () => _unfollowLockedChannels(context) : null,
+    );
   }
 
   @override
@@ -1167,6 +1222,9 @@ class FeedPostSource extends PostSource {
       language: _language,
       writers: people?.writers ?? const [],
       ownerWrites: people?.ownerWrites ?? false,
+      // One channel on screen: its credits follow the owner's claim.
+      channelUrl:
+          _effectiveFeeds.length == 1 ? _effectiveFeeds.first.url : null,
       accent: h.accent,
       onFlag: _channelFlagAction(context),
     );
@@ -1194,12 +1252,12 @@ class FeedPostSource extends PostSource {
   static final RegExp _ownerInUrl =
       RegExp(r'/api/(0x[0-9a-fA-F]{40})/channels/');
 
-  /// Who is behind this one feed: the channel
-  /// owner, read from the feed URL, and the writers, the distinct authors of
-  /// the received posts (an author-less post is the owner's). Null = no row:
-  /// not a PublicOS channel, the owner not resolved yet, or nothing to add —
-  /// the profile you're on IS the owner and nobody else writes here.
-  /// Forums (open posting) show the owner only.
+  /// Who is behind this one feed: the channel owner, read from the feed URL,
+  /// and the writers, the distinct authors of the received posts (an
+  /// author-less post is the owner's). Null = no row: not a PublicOS channel,
+  /// the owner not resolved yet, or nothing to add — the profile you're on IS
+  /// the owner and nobody else writes here. Forums (open posting) show the
+  /// owner only.
   ({Contact owner, List<Contact> writers, bool ownerWrites})? _channelPeople() {
     final feeds = _effectiveFeeds;
     if (feeds.length != 1) return null;
@@ -1220,13 +1278,17 @@ class FeedPostSource extends PostSource {
     final profile = feeds.first.effectiveFoundAtAddress?.toLowerCase();
     if (onlyOwner && profile == ownerAddr) return null;
 
-    final writers = _isForum || onlyOwner
+    // Only an OPEN forum hides its writers ("hosted by"). An `approved`
+    // channel counts as a forum for the sort bar and the "+", but its
+    // writers are a known posters list, so they keep their "by x, y, z".
+    final openForum = _postingPolicy == 'open';
+    final writers = openForum || onlyOwner
         ? const <Contact>[]
         : [
             for (final a in writerAddrs)
               if (byAddr[a] != null) byAddr[a]!,
           ];
-    return (owner: owner, writers: writers, ownerWrites: onlyOwner && !_isForum);
+    return (owner: owner, writers: writers, ownerWrites: onlyOwner && !openForum);
   }
 
   // -----------------------------------------------------------------------
@@ -1246,12 +1308,11 @@ class FeedPostSource extends PostSource {
       // approved — the client never has to model that order.
       final code = _gateCode;
       final accent = host?.accent;
-      // The object the server attached to the refusal, when it did — the
-      // locks then paint without a second call. Null on an older
-      // server: each lock resolves itself.
-      // The refusal's object carries no owner_address (models.Channel only
-      // has account_id), so take owner and server from the URL. Without
-      // them every lock action would return silently.
+      // The object the server attached to the refusal, when it did — the locks
+      // then paint without a second call (D8). Null on an older server: each
+      // lock resolves itself, as before. The refusal's object carries no
+      // owner_address (models.Channel only has account_id), so take owner and
+      // server from the URL. Without them every lock action returned silently.
       final gate = _gateChannel;
       final live = gate?.copyWith(
         ownerAddress: gate.ownerAddress ?? stub.ownerAddress,
@@ -1298,7 +1359,10 @@ class FeedPostSource extends PostSource {
 
 class _PrivateFeedsBanner extends StatelessWidget {
   final GlassTokens tokens;
-  const _PrivateFeedsBanner({required this.tokens});
+
+  /// Unfollows the locked channels; null hides the button.
+  final VoidCallback? onUnfollow;
+  const _PrivateFeedsBanner({required this.tokens, this.onUnfollow});
 
   @override
   Widget build(BuildContext context) {
@@ -1332,6 +1396,24 @@ class _PrivateFeedsBanner extends StatelessWidget {
               ),
             ),
           ),
+          if (onUnfollow != null) ...[
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: onUnfollow,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: tokens.starkWhite,
+                side: BorderSide(color: tokens.borderSubtle),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: Text(context.l10n.postsListChannelNotFoundUnfollow),
+            ),
+          ],
         ],
       ),
     );

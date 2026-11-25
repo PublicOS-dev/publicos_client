@@ -119,17 +119,24 @@ class _CommentCardState extends State<CommentCard> {
   String? _tContent;
   String? _translateError;
 
-  // ---- Signature / binding verification (memoized — ecRecover is not
-  // free, and build() runs often). Recomputed when the comment instance
-  // changes (edit applied, refresh). Only bad outcomes surface UI; unsigned
-  // and legacy-unbound comments render exactly as before.
+  // ---- Signature / binding verification. The card paints first; the check
+  // runs after, off the UI thread (Core's crypto worker), and the answer only
+  // ever ADDS the bad mark. Asked again when the comment instance changes (edit
+  // applied, refresh). Only bad outcomes surface UI; unsigned and
+  // legacy-unbound comments render exactly as before.
   CommentVerificationResult? _verification;
-  CommentVerificationResult get _verifyResult =>
-      _verification ??= CommentSignatureVerifier.verify(
-        widget.comment,
-        widget.post,
-        replyToParent: widget.replyToParent,
-      );
+
+  void _startVerification() {
+    final asked = widget.comment;
+    CommentSignatureVerifier.verdictOf(
+      asked,
+      widget.post,
+      replyToParent: widget.replyToParent,
+    ).then((r) {
+      if (!mounted || !identical(asked, widget.comment)) return;
+      setState(() => _verification = r);
+    }).catchError((_) {});
+  }
 
   String get _targetLang => _translator.deviceLanguage;
   bool get _canTranslateComment =>
@@ -152,6 +159,7 @@ class _CommentCardState extends State<CommentCard> {
     );
     _resolveAuthor();
     _detectCommentLanguage();
+    _startVerification();
   }
 
   @override
@@ -169,7 +177,10 @@ class _CommentCardState extends State<CommentCard> {
   @override
   void didUpdateWidget(covariant CommentCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.comment, widget.comment)) _verification = null;
+    if (!identical(oldWidget.comment, widget.comment)) {
+      _verification = null;
+      _startVerification();
+    }
     // The server spoke (the parent's new comment carries the counts): the
     // optimistic layer is settled, keeping it would count twice.
     if (oldWidget.comment.uid != widget.comment.uid ||
@@ -246,6 +257,13 @@ class _CommentCardState extends State<CommentCard> {
         _showingTranslation = true;
         _translating = false;
       });
+    } on TranslationDownloadTimedOut {
+      if (mounted) {
+        setState(() {
+          _translateError = l10n.errTranslateDownloadFailed;
+          _translating = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -495,12 +513,12 @@ class _CommentCardState extends State<CommentCard> {
 
   /// The post author's reaction badge: the server's word, except when the
   /// reader IS the post's author, whose own reactions show at once (their
-  /// first emoji), optimistic like the button.
+  /// first emoji), optimistic like the button. The author is the signed
+  /// post's author only: no channel-owner fallback, the badge is the
+  /// author's and no one else's.
   CommentAuthorReaction? get _authorReaction {
     final me = widget.myAddress?.toLowerCase();
-    final author = (widget.post.authorAddress ??
-            widget.post.channelOwnerAddress)
-        ?.toLowerCase();
+    final author = widget.post.postAuthorAddress?.toLowerCase();
     if (me != null && author != null && me == author) {
       final mine = _myEmojis();
       return mine.isEmpty
@@ -668,6 +686,7 @@ class _CommentCardState extends State<CommentCard> {
                     )
                   else
                     GlassContactIcon(
+                      opensProfile: true,
                       address: comment.accountAddress,
                       size: _avatarSize,
                     ),
@@ -793,7 +812,7 @@ class _CommentCardState extends State<CommentCard> {
             child: Row(
               children: [
                 Flexible(
-                  child: Text(
+                  child: ContactProfileTap(address: comment.accountAddress, child: Text(
                     comment.isDeleted
                         ? context.l10n.commentCardDeleted
                         : displayName,
@@ -808,7 +827,7 @@ class _CommentCardState extends State<CommentCard> {
                       fontStyle: comment.isDeleted ? FontStyle.italic : null,
                       height: 1.2,
                     ),
-                  ),
+                  )),
                 ),
                 const SizedBox(width: 6),
                 Text('·',
@@ -837,10 +856,11 @@ class _CommentCardState extends State<CommentCard> {
                 // Content-hash-binding check: badge only on bad outcomes (bad
                 // signature, or a comment re-pointed at content it never signed).
                 // Unsigned / legacy / edited-since states stay invisible.
-                if (!comment.isDeleted && _verifyResult.isBad) ...[
+                if (!comment.isDeleted &&
+                    (_verification?.isBad ?? false)) ...[
                   const SizedBox(width: 6),
                   Tooltip(
-                    message: _verifyResult.reason,
+                    message: _verification!.reason,
                     child: Icon(
                       Icons.gpp_bad_rounded,
                       size: 14,

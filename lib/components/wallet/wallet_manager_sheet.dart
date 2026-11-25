@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:publicos_core/publicos_core.dart';
+import 'package:publicos_client/components/chain_icon.dart';
 import 'package:publicos_client/components/contact_banner.dart';
+import 'package:publicos_client/data/chain_registry.dart';
+import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:flutter/material.dart';
 import 'package:publicos_web3_bridge/publicos_web3_bridge.dart'
     show WebStorageProfileId;
@@ -47,6 +52,39 @@ class _WalletManagerSheetState extends State<WalletManagerSheet>
   // keychain key); this is the matching signer.
   EthPrivateKey? _signingKey;
 
+  /// A keychain wallet is one whose key this device holds. Anything else that
+  /// reaches this sheet (a linked address) is WATCHED: the page may be shown
+  /// it, nothing here can sign for it.
+  bool get _watchOnly => widget.wallet['isKeychain'] != true;
+
+  /// Bumped by the header's key chip: the webview opens this site's key
+  /// permissions, which in this sheet is the one pinned key.
+  int _permissionsRevision = 0;
+
+  /// The chain the page is on, `0x`-prefixed, for the chip's corner mark.
+  String? _chainHex;
+
+  /// The "can't sign" notice, shown inside the sheet (a snackbar would land
+  /// on the page underneath, behind it).
+  bool _noticeUp = false;
+  Timer? _noticeTimer;
+
+  void _showCantSign() {
+    if (!mounted) return;
+    _noticeTimer?.cancel();
+    setState(() => _noticeUp = true);
+    _noticeTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _noticeUp = false);
+    });
+  }
+
+  void _setChain(String id) {
+    // May arrive while this sheet is still building its child.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _chainHex != id) setState(() => _chainHex = id);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -63,13 +101,15 @@ class _WalletManagerSheetState extends State<WalletManagerSheet>
 
   @override
   void dispose() {
+    _noticeTimer?.cancel();
     _springController.dispose();
     super.dispose();
   }
 
   /// Resolve the signer for the managed wallet: a keychain EOA signs with its
-  /// own key; a Safe (main/group) or a link we don't hold the key for signs
-  /// with the account owner key for now (EIP-1271 / Safe-routing deferred).
+  /// own key, and NOTHING else signs here. a wallet whose key we do not hold
+  /// fell back to the account's own key, which produced signatures that do not
+  /// recover to the address the page was shown.
   Future<void> _resolveManagedSigningKey() async {
     EthPrivateKey? key;
     try {
@@ -82,9 +122,8 @@ class _WalletManagerSheetState extends State<WalletManagerSheet>
         if (hex != null) key = EthPrivateKey.fromHex(hex);
       }
     } catch (_) {
-      // Fall through to the owner key.
+      // No key: the wallet is watched, and a signature request says so.
     }
-    key ??= PublicOS.currentBlockchainPrivateKey;
     if (mounted) setState(() => _signingKey = key);
   }
 
@@ -164,25 +203,82 @@ class _WalletManagerSheetState extends State<WalletManagerSheet>
           ),
           child: Column(
             children: [
-              _buildBannerTopBar(
-                  tokens, sheetHeight, fallbackColor, iconUrl),
+              _buildBannerTopBar(tokens, sheetHeight, fallbackColor, iconUrl),
               const SizedBox(height: 2),
               Expanded(
                 child: SafeArea(
                   top: false,
-                  child: PublicOSWebView(
-                    initialUrl: widget.app.url ?? '',
-                    // Its own jar: the wallet dApp never shares cookies with
-                    // an app tab of this account. A mounted wallet sheet with
-                    // no session address is a broken invariant -- loud, not a
-                    // fallback into the account's jar.
-                    profileId: WebStorageProfileId.wallet(
-                      PublicOS.sessionBlockchainAddress!,
-                    ),
-                    // Pin the dApp to the wallet pressed "Manage" (Safe address
-                    // for a Safe, EOA for a keychain key), not the global key.
-                    overrideAccountAddress: widget.wallet['address'] as String?,
-                    overrideSigningKey: _signingKey,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: PublicOSWebView(
+                          initialUrl: widget.app.url ?? '',
+                          // Its own jar: the wallet dApp never shares cookies with
+                          // an app tab of this account. A mounted wallet sheet with
+                          // no session address is a broken invariant -- loud, not a
+                          // fallback into the account's jar.
+                          profileId: WebStorageProfileId.wallet(
+                            PublicOS.sessionBlockchainAddress!,
+                          ),
+                          // Pin the dApp to the wallet pressed "Manage" (Safe address
+                          // for a Safe, EOA for a keychain key), not the global key.
+                          overrideAccountAddress:
+                              widget.wallet['address'] as String?,
+                          overrideSigningKey: _signingKey,
+                          overrideWatchOnly: _watchOnly,
+                          permissionsRevision: _permissionsRevision,
+                          onNoSigningKey: _showCantSign,
+                          onChainRegistryCreated: (r) =>
+                              _setChain(r.currentChainId),
+                          onChainChanged: _setChain,
+                        ),
+                      ),
+                      // "This wallet can't sign", over the page.
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: 16,
+                        child: IgnorePointer(
+                          child: AnimatedOpacity(
+                            opacity: _noticeUp ? 1 : 0,
+                            duration: const Duration(milliseconds: 180),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: Color.alphaBlend(tokens.glassFillHover,
+                                    tokens.surfaceElevated),
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: tokens.glassShadow,
+                                    offset: const Offset(0, 4),
+                                    blurRadius: 16,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.visibility_outlined,
+                                      size: 16, color: tokens.textDim),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      context.l10n.walletWatchOnlyCantSign,
+                                      style: TextStyle(
+                                        color: tokens.starkWhite,
+                                        fontSize: 13,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -305,39 +401,83 @@ class _WalletManagerSheetState extends State<WalletManagerSheet>
                       ),
                     ),
                     const SizedBox(width: 10),
-                    // Wallet emoji + name + address
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (walletEmoji != null)
+                    // The key chip: this wallet's emoji with the page's chain
+                    // on its corner, the same mark the browser's address bar
+                    // carries. Tapping it (or the name beside it) opens this
+                    // site's permissions for THIS key and no other.
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _permissionsRevision++),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                           Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Text(walletEmoji,
-                                style: const TextStyle(fontSize: 16)),
+                            padding: const EdgeInsets.only(right: 8),
+                            child: SizedBox(
+                              width: 30,
+                              height: 30,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Positioned.fill(
+                                    child: Center(
+                                      child: _watchOnly
+                                          ? const Icon(
+                                              Icons.visibility_outlined,
+                                              size: 17,
+                                              color: Colors.white)
+                                          : walletEmoji != null
+                                              ? Text(walletEmoji,
+                                                  style: const TextStyle(
+                                                      fontSize: 17, height: 1))
+                                              : const Icon(Icons.key_outlined,
+                                                  size: 17,
+                                                  color: Colors.white),
+                                    ),
+                                  ),
+                                  if (chainIdFromHex(_chainHex) != null)
+                                    Positioned(
+                                      right: -2,
+                                      bottom: -2,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(1.5),
+                                        decoration: BoxDecoration(
+                                          color: tokens.surfaceDeep,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: NftChainIcon(
+                                            chain: chainIdFromHex(_chainHex)!,
+                                            size: 13),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              walletName,
-                              style: const TextStyle(
-                                fontFamily: 'SpaceGrotesk',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                walletName,
+                                style: const TextStyle(
+                                  fontFamily: 'SpaceGrotesk',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
-                            Text(
-                              _formatAddress(walletAddress),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontFamily: 'monospace',
-                                color: Colors.white.withValues(alpha: 0.7),
+                              Text(
+                                _formatAddress(walletAddress),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontFamily: 'monospace',
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

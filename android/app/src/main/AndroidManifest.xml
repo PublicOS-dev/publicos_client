@@ -46,6 +46,8 @@
                 <data android:scheme="https" android:host="publicos.dev" android:pathPrefix="/publicosAddress/"/>
                 <data android:scheme="https" android:host="publicos.dev" android:pathPrefix="/inboxId/"/>
                 <data android:scheme="https" android:host="publicos.dev" android:pathPrefix="/conversationTopic/"/>
+                <!-- A shared post: /post?url=<post address>. -->
+                <data android:scheme="https" android:host="publicos.dev" android:path="/post"/>
             </intent-filter>
         </activity>
         <meta-data

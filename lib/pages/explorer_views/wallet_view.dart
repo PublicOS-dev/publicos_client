@@ -63,6 +63,15 @@ class WalletViewState extends State<WalletView> {
   final Map<String, List<TokenTransfer>> _txByAddress = {};
   final Set<String> _txLoading = {};
 
+  /// Wallets whose history was never stored on this device and is being read
+  /// from the chain for the first time. Only these reserve the activity
+  /// block's height while they load; every other landing already has its
+  /// lines from the device (see [_primeTransfers]).
+  final Set<String> _txFirstFill = {};
+
+  /// Rows per page: the card's read and each further page of the sheet.
+  static const int _txPage = 25;
+
   /// Counterparty **wallet** address (lowercase) -> their [Contact], for the
   /// history sheet's rows. Two hops, mirroring the notification rows:
   ///   1. wallet -> account, on chain, via `PublicOSWalletActivity.ownerAccountOf`
@@ -168,6 +177,10 @@ class WalletViewState extends State<WalletView> {
         });
       }
 
+      // What the device already holds of the Safe's history, read before the
+      // card is shown so it lands with its activity lines.
+      if (safeAddress != null) await _primeTransfers(safeAddress);
+
       if (mounted) {
         setState(() {
           _wallets = walletsWithDetails;
@@ -175,8 +188,7 @@ class WalletViewState extends State<WalletView> {
         });
       }
 
-      // Kick off the Safe's activity scan async — the card renders now; the
-      // preview + history sheet fill in when the log scan settles.
+      // Then bring it up to the chain's head in the background.
       if (safeAddress != null) {
         _loadTransfers(safeAddress);
       }
@@ -191,27 +203,61 @@ class WalletViewState extends State<WalletView> {
     }
   }
 
-  /// Scan recent OX transfers for any PublicOS wallet address (Safe, group
-  /// Safe, keychain key) and cache them for the in-card preview + history
-  /// sheet. Async + best-effort — a failure just leaves the preview empty.
-  /// Deduped so overlapping section reloads don't double-scan the same address.
-  /// PublicOS network only for now (Core throws for other chains).
+  /// The device's copy of a wallet's history, read with no chain request.
+  /// Called before the card is shown, so the card lands with its activity lines
+  /// and its final height. Sets no state: the caller's own `setState` shows it.
+  /// A wallet never stored here is marked as a first fill instead, the one case
+  /// that reserves the height while it loads.
+  Future<void> _primeTransfers(String walletAddress) async {
+    final key = walletAddress.toLowerCase();
+    if (_txByAddress.containsKey(key)) return;
+    try {
+      final addr = EthereumAddress.fromHex(walletAddress);
+      if (await PublicOSWallets.hasTransferHistory(addr,
+          chainId: PublicOS.CHAIN_ID)) {
+        _txByAddress[key] = await PublicOSWallets.getTransferHistory(addr,
+            chainId: PublicOS.CHAIN_ID, limit: _txPage);
+      } else {
+        _txFirstFill.add(key);
+      }
+    } catch (e) {
+      print('Error reading stored transfers: $e');
+    }
+  }
+
+  /// Bring a PublicOS wallet's stored history (Safe, group Safe, keychain key)
+  /// up to the chain's head, then re-read the first page if anything arrived.
+  /// The first time on a device this reads the whole chain; after that only
+  /// the blocks since the last visit (`PublicOSWallets.syncTransferHistory`).
+  /// Async + best-effort: a failure leaves what was showing. Deduped so
+  /// overlapping section reloads don't sync the same address twice.
+  /// PublicOS network only for now.
   Future<void> _loadTransfers(String walletAddress) async {
     final key = walletAddress.toLowerCase();
     if (_txLoading.contains(key)) return;
     if (mounted) setState(() => _txLoading.add(key));
+    final addr = EthereumAddress.fromHex(walletAddress);
     try {
-      final txs = await PublicOSWallets.getRecentTransfers(
-        EthereumAddress.fromHex(walletAddress),
-        chainId: PublicOS.CHAIN_ID,
-        limit: 25,
-      );
-      if (mounted) setState(() => _txByAddress[key] = txs);
-      await _resolveCounterparties(EthereumAddress.fromHex(walletAddress), txs);
+      final had = _txByAddress[key];
+      // Names for the lines already showing; not awaited, the sync is next.
+      if (had != null) _resolveCounterparties(addr, had);
+      final found = await PublicOSWallets.syncTransferHistory(addr,
+          chainId: PublicOS.CHAIN_ID);
+      if (found || had == null) {
+        final txs = await PublicOSWallets.getTransferHistory(addr,
+            chainId: PublicOS.CHAIN_ID, limit: _txPage);
+        if (mounted) setState(() => _txByAddress[key] = txs);
+        await _resolveCounterparties(addr, txs);
+      }
     } catch (e) {
       print('Error loading transfers: $e');
     } finally {
-      if (mounted) setState(() => _txLoading.remove(key));
+      if (mounted) {
+        setState(() {
+          _txLoading.remove(key);
+          _txFirstFill.remove(key);
+        });
+      }
     }
   }
 
@@ -414,6 +460,7 @@ class WalletViewState extends State<WalletView> {
             };
 
             // Group Safes are PublicOS addresses too — load their activity.
+            await _primeTransfers(mainWalletAddress);
             _loadTransfers(mainWalletAddress);
 
             if (mounted) {
@@ -513,6 +560,7 @@ class WalletViewState extends State<WalletView> {
           final balanceEth = balanceWei.toDouble() / 1e18;
 
           // Keychain keys are PublicOS addresses — load their activity too.
+          await _primeTransfers(address);
           _loadTransfers(address);
 
           keychainWalletsWithBalances.add({
@@ -1814,15 +1862,16 @@ class WalletViewState extends State<WalletView> {
                             ],
                           ),
                         ),
-                        // Hidden while this wallet's transfers load, so the
-                        // card settles once instead of twice.
-                        if (!_txLoadingFor(address)) ...[
+                        // There from the first frame: the buttons no longer
+                        // wait for the history.
                           const SizedBox(width: 8),
                           _buildWalletActionRow(
                             name: name,
                             address: address,
                             balance: balance,
-                            emoji: emoji,
+                            // The icon the card shows, so the manager's key
+                            // chip matches it.
+                            emoji: customIcon ?? emoji,
                             isSmallScreen: isSmallScreen,
                             isGroup: isGroup,
                             isKeychain: isKeychain,
@@ -1834,7 +1883,6 @@ class WalletViewState extends State<WalletView> {
                             accountAddress: accountAddress,
                             isLinked: isLinked,
                           ),
-                        ],
                       ],
                     ),
                   ],
@@ -1938,6 +1986,9 @@ class WalletViewState extends State<WalletView> {
         'address': address,
         'balance': balance,
         'emoji': emoji,
+        // The sheet must know whether this device holds the wallet's key:
+        // without it every wallet read as watched.
+        'isKeychain': isKeychain,
       },
       isSmallScreen: isSmallScreen,
     );
@@ -1950,7 +2001,11 @@ class WalletViewState extends State<WalletView> {
       mainAxisSize: MainAxisSize.min,
       children: [
         sendButton,
-        if (!isGroup) ...[
+        // No Manage on the account's own MainSafe: the button opens the chosen
+        // wallet-manager app (Zerion by default), and no manager website can
+        // manage this Safe. It comes back when we have our own screen for it
+        // (modules and the rest). Keychain and linked wallets keep theirs.
+        if (!isGroup && !isMainSafe) ...[
           const SizedBox(width: 8),
           manageButton,
         ],
@@ -1958,12 +2013,12 @@ class WalletViewState extends State<WalletView> {
     );
   }
 
-  /// Is this wallet's transfer list still loading? Single source for the
-  /// hide-while-loading rule, used by both the action row and the activity
-  /// line so they can never disagree.
+  /// Is this wallet's history being read for the FIRST time on this device,
+  /// with nothing to show yet? The one state that reserves the activity
+  /// block's height (see [_activityBelowBalance]).
   bool _txLoadingFor(String address) {
     final key = address.toLowerCase();
-    return _txLoading.contains(key) && _txByAddress[key] == null;
+    return _txFirstFill.contains(key) && _txByAddress[key] == null;
   }
 
   /// Activity under the balance.
@@ -1977,8 +2032,43 @@ class WalletViewState extends State<WalletView> {
   ///    card visibly jumped when it resolved;
   ///  * a quiet wallet shows nothing rather than an "Activity" affordance —
   ///    that button led to a history sheet with nothing in it.
+  ///
+  /// the lines come from the device, so a landing normally has them (or knows
+  /// there are none) on its first frame. The exception is a wallet's first-ever
+  /// read on this device: its height is RESERVED, two invisible lines, so the
+  /// card does not grow when they arrive. A wallet that turns out quiet gives
+  /// the space back, that one time.
   List<Widget> _activityBelowBalance(String address) {
-    if (_txLoadingFor(address)) return const [];
+    if (_txLoadingFor(address)) {
+      final zero =
+          EthereumAddress.fromHex('0x0000000000000000000000000000000000000000');
+      final blank = TokenTransfer(
+        from: zero,
+        to: zero,
+        rawAmount: BigInt.zero,
+        blockNumber: 0,
+        timestamp: DateTime.now(),
+        txHash: '',
+        logIndex: 0,
+      );
+      return [
+        const SizedBox(height: 10),
+        Visibility(
+          visible: false,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _txPreviewLine(blank, address),
+              _txPreviewLine(blank, address),
+            ],
+          ),
+        ),
+      ];
+    }
     final txs = _txByAddress[address.toLowerCase()];
     if (txs == null || txs.isEmpty) return const [];
     return [
@@ -2043,6 +2133,17 @@ class WalletViewState extends State<WalletView> {
         transfers: _txByAddress[key] ?? const [],
         loading: _txLoading.contains(key),
         counterparties: _cpByWallet,
+        pageSize: _txPage,
+        // Older pages come from the device, never the chain. The names for
+        // the new rows are resolved before the page is handed back (the map
+        // above is this view's own, so the sheet sees them).
+        onLoadMore: (last) async {
+          final addr = EthereumAddress.fromHex(address);
+          final page = await PublicOSWallets.getTransferHistory(addr,
+              chainId: PublicOS.CHAIN_ID, limit: _txPage, before: last);
+          await _resolveCounterparties(addr, page);
+          return page;
+        },
       ),
     );
   }

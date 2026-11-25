@@ -47,12 +47,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     _load();
   }
 
-  /// Local first, network after. Phase 1 paints from the device
-  /// DB only — stored rows + stored contacts — and drops the loader. Phase 2
-  /// then pulls the home inbox, resolves own wallets + unknown counterparties
-  /// (chain calls), and marks read; each step repaints when it lands, and the
-  /// home read marker is fire-and-forget. If all of it ran before
-  /// the first paint, a slow RPC/SSP would keep the loader up over a full list.
+  /// Local first, network after. Phase 1 paints from the device DB only —
+  /// stored rows + stored contacts — and drops the loader. Phase 2 then pulls
+  /// the home inbox, resolves own wallets + unknown counterparties (chain
+  /// calls), and marks read; each step repaints when it lands, and the home
+  /// read marker is fire-and-forget. Before this, all of it ran before the
+  /// first paint, so a slow RPC/SSP kept the loader up over a full list.
   Future<void> _load() async {
     _selfLower = PublicOS.sessionBlockchainAddress?.toLowerCase();
 
@@ -70,6 +70,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         final a = c.publicosAddress?.eip55With0x.toLowerCase();
         if (a != null) map[a] = c;
       }
+      // The user's own wallets as last worked out this run (the wallet sweep
+      // does it at start): "main" and the orgs' names are there on the first
+      // paint, and the refresh below only confirms them.
+      final me = PublicOS.myPublicosAddress;
+      final known = me == null
+          ? null
+          : lastOwnReceivingWallets(EthereumAddress.fromHex(me));
       if (!mounted) return;
       setState(() {
         _raw = raw;
@@ -77,13 +84,30 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         _byAddr = map;
         _unreadAtOpen = unread;
         _loading = false;
+        if (known != null) {
+          _wallets = {for (final w in known) w.address.toLowerCase(): w};
+        }
       });
+      // Read is marked HERE, the moment the stored rows are on screen. It used
+      // to be the last step, behind the inbox pull and the wallet and
+      // counterparty lookups: closing the list before those finished left every
+      // row unread, and one that hung left them so for good. The accent on this
+      // session's new rows comes from the snapshot taken above, so marking
+      // early costs nothing.
+      await _markRead();
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
     }
 
     // ── Phase 2: network, each step best-effort ────────────────────────────
+    // The own-wallets lookup runs beside the inbox pull, and ONLY when a wallet
+    // row is still unnamed. Every wallet row was recorded by the sweep, which
+    // knew that wallet, so the remembered set normally names them all and the
+    // list of the user's orgs (a chain call that grows with the orgs they join)
+    // is not asked here. The Wallet tab keeps the full search.
+    final walletsDone =
+        _hasUnnamedWalletRow() ? _refreshOwnWallets() : Future<void>.value();
     // Opening the bell pulls the home inbox, so the list is current. New rows
     // join the list (and the unread accent) without a loader.
     try {
@@ -103,29 +127,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // contact address, so it can never appear in `_byAddr`. Resolve the user's
     // own wallets ("main", the org's name, the key's label) separately, with
     // their emoji/colour so the row draws the Wallet tab's exact mark.
-    try {
-      final wallets = <String, OwnWallet>{};
-      final me = PublicOS.myPublicosAddress;
-      if (me != null) {
-        for (final w
-            in await loadOwnReceivingWallets(EthereumAddress.fromHex(me))) {
-          wallets[w.address.toLowerCase()] = w;
-        }
-      }
-      if (mounted) setState(() => _wallets = wallets);
-    } catch (_) {}
+    await walletsDone;
 
     try {
       final cp = await _resolveCounterparties(_items, _byAddr);
       if (mounted) setState(() => _cpByWallet = cp);
     } catch (_) {}
 
-    try {
-      await PublicOSActivity.markAllRead();
-    } catch (_) {}
-    // Social rows: the read marker at the HOME
-    // SSP too, forward only, so every app of this account agrees. Best
-    // effort and NOT awaited: offline just leaves the server marker behind.
+    // Again, for the rows the inbox pull added while the list was open.
+    await _markRead();
+    // Social rows: the read marker at the HOME SSP too, forward only, so every
+    // app of this account agrees. Best effort and NOT awaited: offline just
+    // leaves the server marker behind.
     var maxSeq = 0;
     for (final e in _raw) {
       if (!ActivityEventType.isSocial(e.eventType)) continue;
@@ -135,6 +148,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (maxSeq > 0) {
       unawaited(PublicOSPush.markNotificationsRead(maxSeq).catchError((_) {}));
     }
+  }
+
+  Future<void> _markRead() async {
+    try {
+      await PublicOSActivity.markAllRead();
+    } catch (_) {}
+  }
+
+  /// A wallet row whose own wallet the remembered set cannot name: opened
+  /// before the first sweep finished, or a stored row of an org since left.
+  bool _hasUnnamedWalletRow() {
+    for (final it in _items) {
+      if (!kWalletKinds.contains(it.kind)) continue;
+      if (_wallets[transferWalletAddress(it.event).toLowerCase()] == null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _refreshOwnWallets() async {
+    try {
+      final me = PublicOS.myPublicosAddress;
+      if (me == null) return;
+      final scan = await scanOwnReceivingWallets(EthereumAddress.fromHex(me));
+      // A partial answer never replaces names already on screen.
+      if (!scan.complete && _wallets.isNotEmpty) return;
+      final wallets = {
+        for (final w in scan.wallets) w.address.toLowerCase(): w,
+      };
+      if (mounted) setState(() => _wallets = wallets);
+    } catch (_) {}
   }
 
   static Set<String> _unreadKeys(List<NotifItem> items) => {
@@ -181,8 +226,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       // Not a contact of ours — fetch once per distinct account.
       if (!fetched.containsKey(accountLower)) {
         try {
-          fetched[accountLower] =
-              await PublicOSContacts.fetchContact(EthereumAddress.fromHex(entry.value));
+          // Kept, so this account is known on the next open (and is not
+          // fetched again here). requireRecords: the result is persisted.
+          final fresh = await PublicOSContacts.fetchContact(
+              EthereumAddress.fromHex(entry.value),
+              requireRecords: true);
+          await PublicOSContacts.saveContact(fresh);
+          fetched[accountLower] = fresh;
         } catch (_) {
           fetched[accountLower] = null;
         }
@@ -203,9 +253,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   /// The counterparty's Contact, keyed by their **wallet** address.
   ///
   /// The map is built in [_load] off the `counterpartyAccount` Core reverse-
-  /// resolved at sweep time. A Safe
+  /// resolved at sweep time. This is the fix for the original bug: a Safe
   /// address is *never* a contact address, so looking the wallet up directly in
-  /// the contacts map always misses. The wallet→account hop happens once,
+  /// the contacts map always missed. Now the wallet→account hop happens once,
   /// on chain, at persist time — and this map closes the loop.
   ///
   /// Null when the other end isn't a PublicOS account (bare EOA, contract, or
@@ -295,6 +345,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     context.l10n.notificationsScreenNoActivity,
                     style: TextStyle(color: tokens.textDim, fontSize: 14),
                   ),
+                  const SizedBox(height: 10),
+                  // Which contacts can show up here at all.
+                  Text(
+                    context.l10n.notificationsScreenStarredNote,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: tokens.textDim, fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -306,10 +363,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             top: kToolbarHeight + MediaQuery.of(context).padding.top + 8,
             bottom: 24,
           ),
-          itemCount: _items.length,
+          // Row 0 is the note saying whose activity can appear here.
+          itemCount: _items.length + 1,
           separatorBuilder: (_, __) =>
               Divider(height: 1, color: tokens.borderSubtle),
-          itemBuilder: (_, i) {
+          itemBuilder: (_, row) {
+            if (row == 0) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+                child: Text(
+                  context.l10n.notificationsScreenStarredNote,
+                  style: TextStyle(color: tokens.textDim, fontSize: 12),
+                ),
+              );
+            }
+            final i = row - 1;
             final item = _items[i];
             final e = item.event;
             final isWallet = kWalletKinds.contains(item.kind);
@@ -350,7 +418,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _openSocial(NotifItem item) async {
     final e = item.event;
     final url = socialItemUrl(e);
-    // A follow request opens the owner's settings on its request queue,
+    // F3: a follow request opens the owner's settings on its request queue,
     // an approval the channel's feed; both carry the CHANNEL as item_url.
     final bool ok;
     if (item.kind == NotifKind.followRequest) {
@@ -494,9 +562,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case NotifKind.transferSelf:
         return _describeTransfer(item, b, t);
 
-      // Social rows: the actor, bold, then the
-      // verb. The actor is never the user (rule 1 at the hosting server), so
-      // there is no "You" form. Twin of notifSentence's six sentences.
+      // Social rows: the actor, bold, then the verb. The actor is never the
+      // user (rule 1 at the hosting server), so there is no "You" form. Twin of
+      // notifSentence's six sentences.
       case NotifKind.comment:
         return [b(_name(e.actor)), t(l10n.notificationsScreenCommented)];
       case NotifKind.reply:

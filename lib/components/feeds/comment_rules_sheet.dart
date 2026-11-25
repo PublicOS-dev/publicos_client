@@ -672,10 +672,10 @@ class _RuleRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          GlassContactIcon(address: addr, size: 36),
+          GlassContactIcon(opensProfile: true, address: addr, size: 36),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
+            child: ContactProfileTap(address: addr, child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -704,7 +704,7 @@ class _RuleRow extends StatelessWidget {
                   ],
                 ),
               ],
-            ),
+            )),
           ),
           _RuleChip(isDeny: isDeny),
           IconButton(

@@ -26,6 +26,7 @@ import 'package:publicos_client/components/phigital_bottom_sheet.dart';
 import 'package:publicos_client/components/shimmer_box.dart';
 import 'package:publicos_client/components/messages/reaction_details_sheet.dart';
 import 'package:publicos_client/components/transactions/send_sheet.dart';
+import 'package:publicos_client/components/transactions/quick_tip.dart';
 import 'package:publicos_client/components/phigital_loading_widget.dart';
 import 'package:publicos_client/components/pixel_rain_loading_widget.dart';
 import 'package:publicos_client/providers/theme_provider.dart';
@@ -77,9 +78,8 @@ class PostCard extends StatefulWidget {
       _PostCardState._gutter;
   static const double wideContentInset = _PostCardState._hPad;
 
-  /// The card geometry the composer renders in (the compose page IS the
-  /// card while writing). Read from here, never copied, so the two cannot
-  /// drift.
+  /// The card geometry the composer renders in. Read from here, never copied,
+  /// so the two cannot drift.
   static const double hPad = _PostCardState._hPad;
   static const double hPadRight = _PostCardState._hPadRight;
   static const double avatarSize = _PostCardState._avatarSize;
@@ -114,6 +114,10 @@ class PostCard extends StatefulWidget {
   final double descriptionTextSize;
   final bool showCommentsIndicator;
   final bool interactive;
+
+  /// The screen's bar already shows the channel's title (an opened post):
+  /// the header lines do not repeat it as "in title".
+  final bool titleInBar;
   final VoidCallback? onPostDeleted;
   final VoidCallback? onPostUpdated;
   final void Function(String feedUrl)? onRemoveFeedFromList;
@@ -171,25 +175,25 @@ class PostCard extends StatefulWidget {
   /// leave this false and keep the immediate fallback behaviour.
   final bool awaitingContacts;
 
-  /// The focused post opens on the hero page the list card showed, its
-  /// video where the user left it, muted and looping as it was.
-  /// The list card passes both when it opens the post; the defaults are
-  /// page 0 and the player's own start.
+  /// The focused post opens on the hero page the list card showed, its video
+  /// where the user left it, muted and looping as it was. The list card passes
+  /// both when it opens the post; the defaults are page 0 and the player's own
+  /// start.
   final int initialHeroPage;
   final VideoHandoff? videoHandoff;
 
   /// The height a post has on screen in the list that hosts it (the list's
   /// viewport under its pinned bar). The hero is capped against it so the
-  /// action row, the audio row and the first line of text stay in sight
-  /// under the media. Null = no list said (the focused
-  /// post, the composer): the 9:16 cap alone.
+  /// action row, the audio row and the first line of text stay in sight under
+  /// the media. Null = no list said (the focused post, the composer): the 9:16
+  /// cap alone.
   final double? viewportHeight;
 
-  /// Hands this card's OWN header row and action row to a host that lays
-  /// them out around its own content (the pinned post card on a profile). They are the
-  /// same widgets on this card's state, so the icon, the name, the "on
-  /// account/feed" line, the reaction button and its sheets are the feed's.
-  /// The header comes with no actions and no outer padding; the host insets.
+  /// Hands this card's OWN header row and action row to a host that lays them
+  /// out around its own content. They are the same widgets on this card's
+  /// state, so the icon, the name, the "on account/feed" line, the reaction
+  /// button and its sheets are the feed's. The header comes with no actions and
+  /// no outer padding; the host insets.
   final Widget Function(BuildContext context, Widget header, Widget actions)?
       partsBuilder;
 
@@ -206,6 +210,7 @@ class PostCard extends StatefulWidget {
     this.descriptionTextSize = 14.0,
     this.showCommentsIndicator = true,
     this.interactive = true,
+    this.titleInBar = false,
     this.onPostDeleted,
     this.onPostUpdated,
     this.onRemoveFeedFromList,
@@ -239,9 +244,8 @@ class _PostCardState extends State<PostCard>
   /// Emojis whose add is on the wire, so a second tap sends nothing.
   final Set<String> _reactingEmojis = {};
 
-  /// Bumped on every add the reader makes, from anywhere (the heart, the
-  /// double tap, the sheet, the hold pill): [ReactionButton] plays the jelly
-  /// on it.
+  /// Bumped on every add the reader makes, from anywhere (the heart, the double
+  /// tap, the sheet, the hold pill): [ReactionButton] plays the jelly on it.
   int _reactPulse = 0;
 
   /// Drives the avatar/name loading shimmer; runs only while
@@ -251,11 +255,11 @@ class _PostCardState extends State<PostCard>
   /// People this card resolved ITSELF. The parent's [PostCard.resolvedContacts]
   /// is the fast path (one batched pass for a whole list); these fill its gaps
   /// so every door to a post names people right: a notification tap, a deep
-  /// link, a share, any caller that passes no map.
-  /// Resolution order per address: local contact cache, then
-  /// `resolveByIdentifier` on the chain, saved like the list's pass does.
-  /// While an address is in flight the author slot shimmers; a miss settles on
-  /// the short address + identicon, never a borrowed name.
+  /// link, a share, any caller that passes no map. Resolution order per
+  /// address: local contact cache, then `resolveByIdentifier` on the chain,
+  /// saved like the list's pass does. While an address is in flight the author
+  /// slot shimmers; a miss settles on the short address + identicon, never a
+  /// borrowed name.
   final Map<String, Contact> _selfResolved = {};
   final Set<String> _selfResolving = {};
   final Set<String> _selfFailed = {};
@@ -268,9 +272,9 @@ class _PostCardState extends State<PostCard>
   int? _localUserVote;
   bool _voteInitialized = false;
 
-  // ---- Translation state (transient — zero persistence by design) --------
-  // ML Kit on-device translate. Detected source language is cached in widget
-  // state only; the translated strings live only while the card is on screen.
+  // ---- Translation state (transient — zero persistence by design) -------- ML
+  // Kit on-device translate. Detected source language is cached in widget state
+  // only; the translated strings live only while the card is on screen. See /
   final _translator = TranslationService.instance;
   String? _detectedLang;
   bool _translating = false;
@@ -495,6 +499,13 @@ class _PostCardState extends State<PostCard>
         _showingTranslation = true;
         _translating = false;
       });
+    } on TranslationDownloadTimedOut {
+      if (mounted) {
+        setState(() {
+          _translateError = l10n.errTranslateDownloadFailed;
+          _translating = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -551,9 +562,9 @@ class _PostCardState extends State<PostCard>
   bool get _showTranslateHint =>
       _translating || _translateError != null || _canTranslatePost;
 
-  /// The header's trailing actions: the translate button
-  /// (when this post can be translated), then the 3-dot menu. Passed into
-  /// `_buildAuthorLine`'s name row, which centres them on the name.
+  /// The header's trailing actions: the translate button (when this post can be
+  /// translated), then the 3-dot menu. Passed into `_buildAuthorLine`'s name
+  /// row, which centres them on the name.
   Widget _buildHeaderActions(
     BuildContext context,
     Post post,
@@ -577,8 +588,8 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  /// Translate, collapsed to one icon left of the 3-dot menu. The states
-  /// show as icon states, with the words in the tooltip:
+  /// Translate, collapsed to one icon left of the 3-dot menu. The states the
+  /// old label spelled out stay, as icon states, with the words in the tooltip:
   ///  - can translate → dim icon;
   ///  - working (download / translate) → the bare pixel rain (peripheral);
   ///  - showing the translation → accent icon (tap = show original);
@@ -688,8 +699,8 @@ class _PostCardState extends State<PostCard>
   static const double _addReactionHPad = 4;
   static const double _imageHeight = 200;
 
-  /// Single FILE tile width, as a fraction of the content width. Single
-  /// media takes the full content width instead.
+  /// Single FILE tile width, as a fraction of the content width. Single media
+  /// takes the full content width instead.
   static const double _singleMediaWidthFactor = 0.64;
 
   /// Tallest shape a single image/video may take: 9:16 portrait. Taller
@@ -702,7 +713,7 @@ class _PostCardState extends State<PostCard>
   /// the single source of the under-author rhythm, identical in both layout
   /// modes. `prev == null` is the first block (gap from the author/header).
   ///
-  /// The rule: 8px author→legend, 4px legend→title, and when no
+  /// Rule: 8px author→legend, 4px legend→title, and when no
   /// legend renders, a straight 8px author→title (so the legend occupies the
   /// 8px slot rather than adding to it). Generalised: first block always 8,
   /// anything after the legend 4, title→banner 8, everything else 6.
@@ -716,11 +727,11 @@ class _PostCardState extends State<PostCard>
   /// The audio row's colour: the author's `color` record when they have one
   /// (the message bubble's rule), else the text colour.
   Color _audioColor(Post post, GlassTokens tokens) {
-    // The author's `color` record is OFF for now: the white default goes
-    // straight in. The rule stays here for when it comes back:
-    // final raw = _contactFor(post.postAuthorAddress)?.getRecordValue('color');
-    // final v = raw == null ? null : int.tryParse(raw);
-    // return v == null ? tokens.starkWhite : Color(v);
+    // The author's `color` record is OFF for now. The rule stays here for when
+    // it comes back: final raw =
+    // _contactFor(post.postAuthorAddress)?.getRecordValue('color'); final v =
+    // raw == null ? null: int.tryParse(raw); return v == null ?
+    // tokens.starkWhite: Color(v);
     return tokens.starkWhite;
   }
 
@@ -763,7 +774,7 @@ class _PostCardState extends State<PostCard>
     final images = post.carouselImages;
     final heroHeader = _heroCarriesHeader(post);
     // Summary and body are rendered separately so posts with both show both
-    // (a summary must never shadow the body).
+    // (previously `formattedDescription` shadowed body when summary existed).
     // Apply the optional combined-length trim budget across the two fields.
     final (summaryText, bodyText) = _trimmedSummaryAndBody(
       summary: post.summary ?? '',
@@ -789,8 +800,7 @@ class _PostCardState extends State<PostCard>
           bottom: BorderSide(color: tokens.borderSubtle, width: 0.5),
         ),
       ),
-      // Wide only: the hero carries the header row on the media itself
-      // (compact keeps the hero inside the content column).
+      // Wide only: the hero carries the header row on the media itself.
       child: isWide
           ? _buildWideBody(
               context, post, theme, tokens, images,
@@ -809,8 +819,8 @@ class _PostCardState extends State<PostCard>
             ),
     );
 
-    // Long-press anywhere on the card opens the reaction quick bar
-    // (`_holdForQuickBar`). Tap keeps opening the post.
+    // Long-press anywhere on the card: the signature Easter egg on a verified
+    // post, the three-states dialog on the others. Tap keeps opening the post.
     if (!widget.interactive) {
       return GestureDetector(
         onLongPressStart: (d) => _holdForQuickBar(post, d.globalPosition),
@@ -818,11 +828,10 @@ class _PostCardState extends State<PostCard>
       );
     }
     // The double-tap heart lives on the hero media and the text blocks
-    // (`_doubleTapToLike`), not on this root: here its recognizer would join
-    // the arena of every tap inside the card, so the action row, the chips
-    // and the header would wait the 300 ms double-tap window before they
-    // fire. The bursts still draw on this Stack, keyed so the inner
-    // detectors can place them.
+    // (`_doubleTapToLike`), not on this root: here its recognizer joined the
+    // arena of every tap inside the card, so the action row, the chips and the
+    // header waited the 300 ms double-tap window before they fired. The bursts
+    // still draw on this Stack, keyed so the inner detectors can place them.
     return Stack(
       key: _rootKey,
       clipBehavior: Clip.none,
@@ -860,11 +869,11 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  /// Where the double-tap heart lives: the hero media and the
-  /// title / summary / body, each wrapped by its builder. Buttons are outside
-  /// it and answer at once; a tap on the media or the text still waits the
-  /// double-tap window, the trade a double-tap like makes. The burst lands
-  /// where the finger did, placed on the root Stack through [_rootKey].
+  /// Where the double-tap heart lives: the hero media and the title / summary /
+  /// body, each wrapped by its builder. Buttons are outside it and answer at
+  /// once; a tap on the media or the text still waits the double-tap window,
+  /// the trade a double-tap like makes. The burst lands where the finger did,
+  /// placed on the root Stack through [_rootKey].
   Widget _doubleTapToLike(Post post, Widget child) {
     if (!widget.interactive) return child;
     return GestureDetector(
@@ -898,12 +907,12 @@ class _PostCardState extends State<PostCard>
   }
 
   /// A double tap only ever ADDS the heart. The server's reaction verb is a
-  /// toggle, so when it answers "removed" (the heart was already there) it
-  /// is put straight back; the burst plays either way.
-  /// Whether the reader has [emoji] on this post: this session's optimistic
-  /// answer first (a removal wins over a stale yes), else the server's own
-  /// word, `viewerReactions`, which a signed interactions read fills.
-  /// Per emoji; the double tap asks about the reader's default (`ReactionPrefs`).
+  /// toggle, so when it answers "removed" (the heart was already there) it is
+  /// put straight back; the burst plays either way. Whether the reader has
+  /// [emoji] on this post: this session's optimistic answer first (a removal
+  /// wins over a stale yes), else the server's own word, `viewerReactions`,
+  /// which a signed interactions read fills. Per emoji; the double tap asks
+  /// about the reader's default (`ReactionPrefs`).
   bool _hasReaction(Post post, String emoji) {
     final optimistic = _optimisticReactions[emoji];
     if (optimistic != null) return optimistic;
@@ -924,11 +933,11 @@ class _PostCardState extends State<PostCard>
     return out;
   }
 
-  /// Sets the reader's [emoji] on or off in this session's layer. The layer
-  /// is a delta over the server's word (`viewerReactions` + the counts): a
-  /// change that lands back on the server's state CLEARS the entry, never
-  /// stacks on it. Otherwise: remove in the sheet (entry false, count 0), tap
-  /// the heart (entry overwritten true) = the server's 1 + 1 = 2.
+  /// Sets the reader's [emoji] on or off in this session's layer. The layer is
+  /// a delta over the server's word (`viewerReactions` + the counts): a change
+  /// that lands back on the server's state CLEARS the entry, never stacks on
+  /// it. Bug: remove in the sheet (entry false, count 0), tap the heart (entry
+  /// overwritten true) = the server's 1 + 1 = 2.
   void _markMine(Post post, String emoji, bool on) {
     final server = post.viewerReactions?.contains(emoji) ?? false;
     if (on == server) {
@@ -941,8 +950,8 @@ class _PostCardState extends State<PostCard>
   Future<bool> _likeByDoubleTap(Post post) =>
       _addReaction(post, ReactionPrefs.doubleTapEmojiSync);
 
-  /// ADD-only (the double tap and the quick bar): the server's
-  /// verb is a toggle, so an answer of "removed" is toggled straight back.
+  /// ADD-only: the server's verb is a toggle, so an answer of "removed" is
+  /// toggled straight back.
   ///
   /// Every add bumps [_reactPulse], so the jelly plays on the reaction button
   /// whatever started it. True = the reaction is on (or already was).
@@ -986,17 +995,16 @@ class _PostCardState extends State<PostCard>
 
   Offset? _lastDown;
 
-  /// The card-wide hold opens the reaction quick bar at the finger, five
-  /// slots + `+`. The signature shimmer plays on its own
-  /// (`SignatureShimmerPrefs`), and the `!` mark opens the three-states
-  /// dialog on tap.
+  /// The card-wide hold opens the reaction quick bar at the finger, five slots
+  /// + `+`. The signature shimmer it used to trigger now plays on its own
+  /// (`SignatureShimmerPrefs`), and the `!` mark keeps the three-states dialog
+  /// on tap, so nothing was lost to the pill.
   void _holdForQuickBar(Post post, Offset at) {
     if (!PublicOSChannels.canReact(post)) return;
     ReactionQuickBar.showAt(
       context,
       at,
-      // The pick bursts where the hold was, with the picked emoji, then
-      // adds.
+      // The pick bursts where the hold was, with the picked emoji, then adds.
       onPick: (emoji) {
         _burstAtGlobal(at, emoji: emoji);
         _addReaction(post, emoji);
@@ -1006,10 +1014,10 @@ class _PostCardState extends State<PostCard>
   }
 
   /// Wide layout: a post the author marked `media_post` has its hero (one
-  /// picture or video, or the pager of two or more) as the card's top with
-  /// the header row laid on it (`_buildHeroHeader`). The author says it, the
-  /// reader never infers it (PublicOS Feed v1 § Media posts). Compact keeps
-  /// the hero in the content column under the header.
+  /// picture or video, or the pager of two or more) as the card's top with the
+  /// header row laid on it (`_buildHeroHeader`). The author says it, the reader
+  /// never infers it. Compact keeps the hero in the content column under the
+  /// header.
   static bool _heroCarriesHeader(Post post) =>
       post.heroMedia.isNotEmpty && post.mediaPost;
 
@@ -1203,7 +1211,8 @@ class _PostCardState extends State<PostCard>
           _buildHeroHeader(context, post, theme, tokens)
         else
           _buildHeaderRow(context, post, theme, tokens),
-        // A media_post's actions sit right under its hero and audio.
+        // TRIAL: a media_post's actions sit right under its hero and audio,
+        // where the rail used to float inside the hero.
         if (heroHeader) ...[
           if (post.audio != null)
             Padding(
@@ -1216,10 +1225,10 @@ class _PostCardState extends State<PostCard>
             child: _buildActionRow(post, theme, tokens, isWide: true),
           ),
         ],
-        // Body content — flat `_widePad` (= the avatar's edge), no avatar inset. Shares the
-        // gap rhythm + widgets with compact via `_buildContentColumn`. The pad
-        // is applied per block so the banner can run edge-to-edge (wide
-        // only, square corners).
+        // Body content — flat `_widePad` (= the avatar's edge), no avatar
+        // inset. Shares the gap rhythm + widgets with compact via
+        // `_buildContentColumn`. The pad is applied per block so the banner can
+        // run edge-to-edge.
         _buildContentColumn(
           post, theme, tokens,
           displayTitle: displayTitle,
@@ -1307,10 +1316,9 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  /// The post's header for the focused media screen's fixed top row: a copy
-  /// of the post's header (contact icon, display name), no actions. The
-  /// overlay is black whatever the theme, so it is built on the dark tokens
-  /// (the overlay also themes it dark).
+  /// The post's header for the focused media screen's fixed top row: the same
+  /// row, no actions. The overlay is black whatever the theme, so it is built
+  /// on the dark tokens (the overlay also themes it dark).
   Widget _overlayHeader() => _buildHeaderRow(
         context,
         widget.post,
@@ -1319,16 +1327,15 @@ class _PostCardState extends State<PostCard>
         actions: false,
       );
 
-  /// The hero as the card's top with the header row ON it (the story
-  /// look): the same hero block the content column would draw
-  /// (`_buildHero`, flush: a picture at its ratio, a video as the inline
-  /// player, two or more as the pager), edge to edge. The row keeps
-  /// `_buildHeaderRow`'s offsets, so the icon and name land on the same
-  /// pixels as on every other card; a short top scrim keeps them readable
-  /// over a bright frame. The row's own widgets (icon, translate, menu) take
-  /// their taps; the rest of the row opens the post like the card body does,
-  /// so a tap aimed at the name never opens the picture, toggles the video or
-  /// swipes the pager.
+  /// The hero as the card's top with the header row ON it: the same hero block
+  /// the content column would draw (`_buildHero`, flush: a picture at its
+  /// ratio, a video as the inline player, two or more as the pager), edge to
+  /// edge. The row keeps `_buildHeaderRow`'s offsets, so the icon and name land
+  /// on the same pixels as on every other card; a short top scrim keeps them
+  /// readable over a bright frame. The row's own widgets (icon, translate,
+  /// menu) take their taps; the rest of the row opens the post like the card
+  /// body does, so a tap aimed at the name never opens the picture, toggles the
+  /// video or swipes the pager.
   Widget _buildHeroHeader(
     BuildContext context,
     Post post,
@@ -1377,24 +1384,22 @@ class _PostCardState extends State<PostCard>
           flush: true,
           menu: _buildPostMenu(context, post, theme, tokens, size: 22),
         ),
-        // The rail is off; a media_post's action row sits under the
-        // hero + audio instead (`_buildWideBody`). Uncomment to restore.
+        // TRIAL: the rail is off; a media_post's action row sits under the hero
+        // + audio instead (`_buildWideBody`). Uncomment to restore.
         // _tallHeroRail(post),
       ],
     );
   }
 
-  /// The tall-hero rail (on a tall media post the reader cannot see the
-  /// reaction counts, the comments or the other buttons). Wide layout
-  /// only, on every hero whether or not the header rides it (`media_post`
-  /// plays no part). When the hero is at least [_tallHeroShare] of the screen's height
-  /// the action row under it is off screen while the media shows, so the
-  /// actions ride the media's right edge as well: reaction with its count,
-  /// comments with its count, share, bookmark, top to bottom; glyphs under a
-  /// soft shade, no background; the same handlers as the row. The share is
-  /// measured against the screen, so the same clip qualifies on a phone and
-  /// not on a tablet. A 9:16 hero at a phone's column width is ~73 %, a 4:5
-  /// ~51 %, hence 60 %.
+  /// The tall-hero rail. Wide layout only, on every hero whether or not the
+  /// header rides it (`media_post` plays no part). When the hero is at least
+  /// [_tallHeroShare] of the screen's height the action row under it is off
+  /// screen while the media shows, so the actions ride the media's right edge
+  /// as well: reaction with its count, comments with its count, share,
+  /// bookmark, top to bottom; glyphs under a soft shade, no background; the
+  /// same handlers as the row. The share is measured against the screen, so the
+  /// same clip qualifies on a phone and not on a tablet. A 9:16 hero at a
+  /// phone's column width is ~73 %, a 4:5 ~51 %, hence 60 %.
   static const double _tallHeroShare = 0.6;
 
   // ignore: unused_element
@@ -1437,8 +1442,8 @@ class _PostCardState extends State<PostCard>
                             ? null
                             : ReactionPrefs.doubleTapEmojiSync),
                     count: total,
-                    // The single button's rule: not reacted yet
-                    // = react; reacted = the reactions sheet.
+                    // The single button's rule: not reacted yet = react;
+                    // reacted = the reactions sheet.
                     onTap: () => hearted
                         ? _showReactionDetails(context, post, null)
                         : _likeByDoubleTap(post),
@@ -1457,6 +1462,7 @@ class _PostCardState extends State<PostCard>
                   _railItem(
                     icon: Icons.ios_share_rounded,
                     onTap: () => _sharePost(post),
+                    onLongPress: () => _sharePost(post, plain: true),
                   ),
                   SizedBox(height: 8,),
                   _railItem(
@@ -1481,11 +1487,12 @@ class _PostCardState extends State<PostCard>
     String? emoji,
     int? count,
     required VoidCallback onTap,
+    VoidCallback? onLongPress,
   }) {
-    // Ink, not a bare detector: a ripple lets the user know the tap landed
-    // (the icon-action pattern).
+    // Ink, not a bare detector: the styling guide's icon-action pattern.
     return InkResponse(
       onTap: onTap,
+      onLongPress: onLongPress,
       radius: 24,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 7),
@@ -1538,7 +1545,7 @@ class _PostCardState extends State<PostCard>
     bool includeAudio = true,
   }) {
     final entries = <(_PostBlock, Widget)>[];
-    // Translate is an icon in the header (`_buildTranslateButton`).
+    // Translate moved to an icon in the header (`_buildTranslateButton`).
     if (displayTitle.isNotEmpty) {
       entries.add((
         _PostBlock.title,
@@ -1631,16 +1638,26 @@ class _PostCardState extends State<PostCard>
   /// Falls back to free-text `authorName` (RSS `<author>` tag) when no on-chain
   /// author is set, or to the discovery contact's name as a last resort.
   ///
-  /// Subtitle `[feed_name] · via [icon] foundAt_displayName` is rendered
-  /// below the line only when [PostCard.showFeedContext] is true (regular
-  /// non-single aggregate-list surfaces). Drops the via segment when foundAt
-  /// is null.
-  /// [trailing] (the header actions: translate + 3-dot menu) rides the NAME
-  /// row itself, so the row's centre alignment puts it on the name whatever
-  /// the font metrics (a fixed offset from outside would land above the
-  /// name).
+  /// Subtitle `[feed_name] · via [icon] foundAt_displayName` is rendered below
+  /// the line only when [PostCard.showFeedContext] is true (regular non-single
+  /// aggregate-list surfaces). Drops the via segment when foundAt is null.
+  /// [trailing] (the header actions: translate + 3-dot menu) rides the NAME row
+  /// itself, so the row's centre alignment puts it on the name whatever the
+  /// font metrics.
   Widget _buildAuthorLine(Post post, GlassTokens tokens, {Widget? trailing}) {
-    final displayName = _displayedAuthorName(post);
+    final id = _identityOf(post);
+    // An outside article with no author: the feed's own title stands where
+    // the name goes (never a guessed name).
+    final displayName =
+        id.authorless ? (id.title ?? '—') : _displayedAuthorName(post);
+    // "in title" rides line 1 only when line 2 is taken by the found-at and
+    // the tab does not already name the feed (post_identity, 2026-11).
+    final inTitleOnLine1 = widget.showFeedContext &&
+        !widget.titleInBar &&
+        id.hasFoundAt &&
+        !id.tabNamesFeed &&
+        !id.authorless &&
+        id.title != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1664,29 +1681,47 @@ class _PostCardState extends State<PostCard>
                               base: tokens.surfaceElevated,
                               highlight: _shimmerHighlight(tokens),
                             )
-                          // The name shimmers once in rainbow when the
-                          // card's long-press finds a verified signature
-                          // (the Easter egg).
-                          : SignedAuthorName(
-                              post: post,
-                              name: displayName,
-                              style: TextStyle(
-                                color: tokens.starkWhite,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                height: 1.2,
+                          // The name shimmers once in rainbow when the card's
+                          // long-press finds a verified signature. The name
+                          // opens the author, like the avatar; with no profile
+                          // to open the tap falls through to the card.
+                          : GestureDetector(
+                              onTap: _authorProfileTap(),
+                              child: SignedAuthorName(
+                                post: post,
+                                name: displayName,
+                                style: TextStyle(
+                                  color: tokens.starkWhite,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.2,
+                                ),
                               ),
                             ),
                     ),
+                    if (id.authorless && id.outside) ...[
+                      const SizedBox(width: 4),
+                      _feedMark(tokens),
+                    ],
+                    if (inTitleOnLine1) ...[
+                      const SizedBox(width: 5),
+                      // Not flexible on purpose: when the line does not fit,
+                      // the author is the part that is cut, never "in title".
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                            maxWidth: MediaQuery.sizeOf(context).width * 0.42),
+                        child: _inTitle(id, tokens),
+                      ),
+                    ],
                     const SizedBox(width: 6),
                     Text('·', style: TextStyle(color: tokens.textDim)),
                     const SizedBox(width: 6),
                     Flexible(
                       flex: 0,
-                      // Time + the signature mark: amber `!`
-                      // when the post is unsigned, red when its signature is
-                      // bad, nothing when it verifies. Tap explains; a
-                      // long-press shimmers the author's name.
+                      // Time + the signature mark: amber `!` when the post is
+                      // unsigned, red when its signature is bad, nothing when
+                      // it verifies. Tap explains; a long-press shimmers the
+                      // author's name.
                       child: PostSignatureMark(
                         post: post,
                         child: Text(
@@ -1718,8 +1753,8 @@ class _PostCardState extends State<PostCard>
             ),
           ),
         ),
-        // The feed-context line carries the server mark; without the line
-        // the mark stands alone.
+        // The feed-context line carries the server mark; without the line the
+        // mark stands alone.
         if (widget.showFeedContext)
           _buildFeedContextSubtitle(post, tokens)
         else
@@ -1735,52 +1770,62 @@ class _PostCardState extends State<PostCard>
   /// the same `goToFeed` as the 3-dot menu's *Go to feed* — and is plain
   /// text wherever that item would be hidden.
   Widget _buildFeedContextSubtitle(Post post, GlassTokens tokens) {
-    final feedName = post.feedTitle?.trim();
-    final hasFeedName = feedName != null && feedName.isNotEmpty;
+    final id = _identityOf(post);
     final foundAt = _foundAtContact;
-    if (!hasFeedName && foundAt == null) {
-      return PostServerMark(post: post);
+    // No found-at: "in title" takes this line. An article with no author
+    // already carries the feed's title on line 1, so it gets no line 2.
+    if (!id.hasFoundAt) {
+      if (id.title == null || id.authorless || widget.titleInBar) {
+        return PostServerMark(post: post);
+      }
     }
-    final row = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // "on account/feed".
-        Text('${context.l10n.postCardFeedContextOn} ',
-            style: TextStyle(color: tokens.textDim, fontSize: 11)),
-        if (foundAt != null) ...[
-          GlassContactIcon(contact: foundAt, size: 14),
-          const SizedBox(width: 4),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 140),
-            child: Text(
-              foundAt.displayName ?? '—',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tokens.starkWhite.withValues(alpha: 0.85),
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          if (hasFeedName)
-            Text('/', style: TextStyle(color: tokens.textDim, fontSize: 11)),
-        ],
-        if (hasFeedName)
-          Flexible(
-            child: Text(
-              feedName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tokens.textDim,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-      ],
+    final dim = TextStyle(color: tokens.textDim, fontSize: 11);
+    final strong = TextStyle(
+      color: tokens.starkWhite.withValues(alpha: 0.85),
+      fontSize: 11,
+      fontWeight: FontWeight.w500,
     );
+    final row = !id.hasFoundAt
+        ? _inTitle(id, tokens)
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('${context.l10n.postCardFeedContextOn} ', style: dim),
+              // The cleanest card: the profile it was found on is the author,
+              // so only the tab is named.
+              if (!id.foundOnAuthor) ...[
+                if (foundAt != null) ...[
+                  GlassContactIcon(contact: foundAt, size: 14),
+                  const SizedBox(width: 4),
+                ],
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 140),
+                  child: Text(
+                    foundAt?.displayName ??
+                        _shortAddr(post.feedFoundAtAccountAddress ?? ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: strong,
+                  ),
+                ),
+                Text(' / ', style: dim),
+              ],
+              Flexible(
+                child: Text(
+                  id.tabLabel ?? id.title ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: id.foundOnAuthor
+                      ? strong
+                      : dim.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (id.outside && id.tabNamesFeed) ...[
+                const SizedBox(width: 4),
+                _feedMark(tokens),
+              ],
+            ],
+          );
     final canTap = widget.showGoToFeed && canGoToFeed(post);
     return Padding(
       padding: const EdgeInsets.only(top: 3),
@@ -1793,8 +1838,8 @@ class _PostCardState extends State<PostCard>
         child: Align(
           alignment: Alignment.centerLeft,
           // An amber `!` right of the line when the post's server is not a
-          // registered SSP; outside the
-          // ink box, so its tap opens the server dialog, not the feed.
+          // registered SSP; outside the ink box, so its tap opens the server
+          // dialog, not the feed.
           child: PostServerMark(
             post: post,
             child: !canTap
@@ -1819,19 +1864,102 @@ class _PostCardState extends State<PostCard>
     );
   }
 
+  /// "in <title>": the channel's or feed's own title, smaller and not bold,
+  /// with the small feed mark after it when the feed is not PublicOS.
+  Widget _inTitle(_PostIdentity id, GlassTokens tokens) {
+    final dim = TextStyle(color: tokens.textDim, fontSize: 11);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('${context.l10n.postCardFeedContextIn} ', style: dim),
+        Flexible(
+          child: Text(
+            id.title ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: tokens.starkWhite.withValues(alpha: 0.8),
+              fontSize: 11,
+            ),
+          ),
+        ),
+        if (id.outside) ...[
+          const SizedBox(width: 4),
+          _feedMark(tokens),
+        ],
+      ],
+    );
+  }
+
+  /// The small mark right of the title of a feed that is not PublicOS (RSS,
+  /// Atom, JSON Feed). It says what kind of source this is; it is not a
+  /// warning, so it is neutral, never amber.
+  Widget _feedMark(GlassTokens tokens) => Icon(Icons.rss_feed_rounded,
+      size: 11, color: tokens.textDim.withValues(alpha: 0.9));
+
+  /// What the card's two lines are built from (post_identity, 2026-11).
+  _PostIdentity _identityOf(Post post) {
+    final outside = postIsOutside(post);
+    final foundAtAddr = post.feedFoundAtAccountAddress;
+    final key = post.feedRecordKey;
+    // A found-at is real only with its tab key: the channel reads stamp the
+    // owner as a stand-in profile, and that is not where a post was found.
+    final hasFoundAt = foundAtAddr != null &&
+        foundAtAddr.isNotEmpty &&
+        key != null &&
+        key.isNotEmpty;
+    bool same(String? a, String? b) =>
+        a != null && b != null && a.toLowerCase() == b.toLowerCase();
+    String? tabLabel;
+    if (hasFoundAt) {
+      for (final r in _foundAtContact?.records ?? const <Record>[]) {
+        if (r.key == key) {
+          final n = r.metadata['name'];
+          if (n is String && n.trim().isNotEmpty) tabLabel = n.trim();
+          break;
+        }
+      }
+    }
+    var title = post.feedTitle?.trim();
+    if (title == null || title.isEmpty) {
+      final slug = post.channelSlug;
+      if (!outside && slug != null && slug.isNotEmpty) {
+        title = '#$slug';
+      } else {
+        final host = Uri.tryParse(post.feedUrl ?? post.url ?? '')?.host ?? '';
+        title = host.isEmpty ? null : host.replaceFirst('www.', '');
+      }
+    }
+    final author = post.postAuthorAddress;
+    final rawAuthor = post.authorName?.trim() ?? '';
+    return _PostIdentity(
+      outside: outside,
+      hasFoundAt: hasFoundAt,
+      title: title,
+      tabLabel: tabLabel,
+      // The tab has priority: found on the channel owner's own profile, the
+      // tab names the feed and the title is dropped.
+      tabNamesFeed:
+          hasFoundAt && !outside && same(foundAtAddr, post.channelOwnerAddress),
+      foundOnAuthor: hasFoundAt && !outside && same(foundAtAddr, author),
+      authorless:
+          outside && (author == null || author.isEmpty) && rawAuthor.isEmpty,
+    );
+  }
+
   /// Author display name: the signed author's contact name > its short
   /// address > the author line as written > '—'. Only a signed post's author
   /// is an account (`postAuthorAddress`, Core sets it for signed posts
   /// alone); an unsigned post's `author` and an RSS `<author>` are labels,
   /// shown as written and never looked up: a name as text, an address as a
-  /// short address.
+  /// short address (spec § Authors).
   String _displayedAuthorName(Post post) {
     final contact = _authorContact;
     final cn = contact?.displayName;
     if (cn != null && cn.isNotEmpty) return cn;
     // Signed author not resolved yet → its short address. Never borrow the
     // free-text / discovery name here: for a PublicOS post that
-    // misattributes authorship (e.g. a signing key with no account
+    // misattributes authorship (e.g. a prior-deploy signing key with no account
     // surfacing under the channel owner / discovery account's name).
     final addr = post.postAuthorAddress;
     if (addr != null && addr.isNotEmpty) return _shortAddr(addr);
@@ -1850,8 +1978,8 @@ class _PostCardState extends State<PostCard>
 
   /// Detect whether the post has been edited. Driven by Core's `dateModified`
   /// — server stamps it only in `UpdatePost`, never on bridged inserts or
-  /// replays. Null = never edited. Do not use an `updatedAt - createdAt`
-  /// heuristic: it lies for bridged content.
+  /// chain-redeploy replays. Null = never edited. Replaces the prior
+  /// `updatedAt - createdAt > 5s` heuristic, which lied for bridged content.
   bool _wasEdited(Post post) => post.dateModified != null;
 
   /// Apply the "trim long posts" reading setting. Summary is preferred — if
@@ -1908,16 +2036,15 @@ class _PostCardState extends State<PostCard>
     return (_tTitle ?? '', s, b);
   }
 
-  /// The hero block: one picture or video is the banner ([_buildBanner]);
-  /// two or more are [_buildHeroPager]: one box in the same place, paged.
-  /// Either way the **corner pill** sits top-right over it: the `x/y`
-  /// counter past four items, expand, and the post menu when the header row
-  /// is on the hero ([menu], passed by [_buildHeroHeader]); then it is
-  /// centred on the contact row ([_heroCornerTop]), otherwise at the plain
-  /// 8 px inset. Expand opens the focused viewer
-  /// on the item shown: through the video tile's [ExpandHandle] for a video
-  /// (decoder released first, position handed over), the lightbox for a
-  /// picture.
+  /// The hero block: one picture or video is the banner ([_buildBanner]); two
+  /// or more are [_buildHeroPager]: one box in the same place, paged. Either
+  /// way the **corner pill** sits top-right over it: the `x/y` counter past
+  /// four items, expand, and the post menu when the header row is on the hero
+  /// ([menu], passed by [_buildHeroHeader]); then it is centred on the contact
+  /// row ([_heroCornerTop]), otherwise at the plain 8 px inset. Expand opens
+  /// the focused viewer on the item shown: through the video tile's
+  /// [ExpandHandle] for a video (decoder released first, position handed over),
+  /// the lightbox for a picture.
   Widget _buildHero(
     Post post,
     GlassTokens tokens, {
@@ -1948,19 +2075,18 @@ class _PostCardState extends State<PostCard>
       children: [
         media,
         _heroCorner(post, flush: flush, menu: menu),
-        // Wide layout: the tall-hero rail rides any hero, `media_post` or
-        // not. The header-on-hero path adds the same rail after its row.
-        // The rail is off (see `_buildHeroHeader`).
-        // if (flush) _tallHeroRail(post),
+        // Wide layout: the tall-hero rail rides any hero, `media_post` or not.
+        // The header-on-hero path adds the same rail after its row. TRIAL: the
+        // rail is off (see `_buildHeroHeader`). if (flush) _tallHeroRail(post),
       ],
     );
   }
 
   /// The corner pill for [post]'s hero, positioned: `x/y` past four items,
-  /// expand on the item shown (the video tile's handle, or the lightbox),
-  /// and [menu] when the row is on the hero. Drawn by [_buildHero] over the
-  /// media, or by [_buildHeroHeader] AFTER the header row, since that row is
-  /// a full-width tap target and would take the pill's taps otherwise.
+  /// expand on the item shown (the video tile's handle, or the lightbox), and
+  /// [menu] when the row is on the hero. Drawn by [_buildHero] over the media,
+  /// or by [_buildHeroHeader] AFTER the header row, since that row is a
+  /// full-width tap target and would take the pill's taps otherwise.
   Positioned _heroCorner(Post post, {required bool flush, Widget? menu}) {
     final heroes = post.heroMedia.take(_maxHeroItems).toList();
     final VoidCallback onExpand;
@@ -2041,11 +2167,10 @@ class _PostCardState extends State<PostCard>
 
   /// The tallest a hero [width] wide may be: the 9:16 cap, and in a list
   /// (`PostCard.viewportHeight`) no taller than leaves what follows it on
-  /// screen: the action row, the audio row when the post has one, and the
-  /// first line of text when it has any (without an audio row the hero can
-  /// be that much taller). Taller media keeps the full width; its
-  /// top and bottom overflow the box, hidden. Never under 16:9,
-  /// so a short viewport cannot squash the hero to a strip.
+  /// screen: the action row, the audio row when the post has one, and the first
+  /// line of text when it has any. Taller media keeps the full width; its top
+  /// and bottom overflow the box, hidden. Never under 16:9, so a short viewport
+  /// cannot squash the hero to a strip.
   double _heroMaxHeight(double width) {
     final ratioCap = PostCard.singleMediaMaxHeight(width);
     final visible = widget.viewportHeight;
@@ -2079,21 +2204,19 @@ class _PostCardState extends State<PostCard>
     return math.min(ratioCap, math.max(visible - reserve, floor));
   }
 
-  /// Two or more heroes: a horizontal `PageView` in one box the biggest
-  /// item's shape (the container has the size of the biggest item, the
-  /// others are contained inside it), every item CONTAINED in it
-  /// over black (a picture letterboxed, never cropped; a video the same),
-  /// swiped. **Navigation dots sit just under the box's bottom edge**, and
-  /// past four items an `x/y` counter sits bottom-right inside the box, left
-  /// of the expand disc. A tap on a picture, or
-  /// its expand disc, opens the lightbox on that item, whole, paging through
-  /// the heroes. A video on the page on screen is the same inline player a
-  /// lone video hero gets (autoplay muted, the list's one-at-a-time rules,
-  /// the controls with their own expand disc in the same corner); every
-  /// other page is a poster tile with a play circle and holds no decoder, so
-  /// the page shown is the only candidate the playback scope sees and a
-  /// swipe between two videos hands the slot over. [flush]: wide mode, edge
-  /// to edge with square corners, like the banner.
+  /// Two or more heroes: a horizontal `PageView` in one box the biggest item's
+  /// shape, every item CONTAINED in it over black (a picture letterboxed, never
+  /// cropped; a video the same), swiped. **Navigation dots sit just under the
+  /// box's bottom edge**, and past four items an `x/y` counter sits
+  /// bottom-right inside the box, left of the expand disc. A tap on a picture,
+  /// or its expand disc, opens the lightbox on that item, whole, paging through
+  /// the heroes. A video on the page on screen is the same inline player a lone
+  /// video hero gets (autoplay muted, the list's one-at-a-time rules, the
+  /// controls with their own expand disc in the same corner); every other page
+  /// is a poster tile with a play circle and holds no decoder, so the page
+  /// shown is the only candidate the playback scope sees and a swipe between
+  /// two videos hands the slot over. [flush]: wide mode, edge to edge with
+  /// square corners, like the banner.
   Widget _buildHeroPager(
     List<PostMedia> heroes,
     List<MediaGalleryItem> gallery,
@@ -2106,8 +2229,8 @@ class _PostCardState extends State<PostCard>
         final width = constraints.maxWidth;
         final height = _heroBoxHeight(heroes, width, _heroMaxHeight(width));
         // The tall-hero rule (`_tallHeroShare`, wide only): the dots move
-        // INSIDE the box, the same 8 px from its bottom edge but inwards,
-        // where the rail lives too.
+        // INSIDE the box, the same 8 px from its bottom edge but inwards, where
+        // the rail lives too.
         final tall = flush &&
             height >= MediaQuery.sizeOf(context).height * _tallHeroShare;
         return Column(
@@ -2127,9 +2250,9 @@ class _PostCardState extends State<PostCard>
                     PageView.builder(
                       controller: _heroPages,
                       itemCount: heroes.length,
-                      // The pages either side are built too, so the next picture is
-                      // decoded before the swipe lands on it and does not flicker in.
-                      // Those pages are posters at most, never a player.
+                      // The pages either side are built too, so the next
+                      // picture is decoded before the swipe lands on it. Those
+                      // pages are posters at most, never a player.
                       allowImplicitScrolling: true,
                       onPageChanged: (i) => setState(() => _heroPage = i),
                       itemBuilder: (context, i) {
@@ -2140,12 +2263,11 @@ class _PostCardState extends State<PostCard>
                         // scope forgets it), the arriving one mounts and
                         // reports itself.
                         final shown = i == _heroPage;
-                        // Every page takes the box's full width. An item
-                        // that would be taller than the (capped) box at that
-                        // width covers it, top and bottom hidden, like a
-                        // lone hero; a shorter one is contained, bars above
-                        // and below. Without stated
-                        // pixels it is contained.
+                        // Every page takes the box's full width. An item that
+                        // would be taller than the (capped) box at that width
+                        // covers it, top and bottom hidden, like a lone hero; a
+                        // shorter one is contained, bars above and below.
+                        // Without stated pixels it is contained.
                         final mw = m.width, mh = m.height;
                         final covers = mw != null &&
                             mh != null &&
@@ -2200,9 +2322,9 @@ class _PostCardState extends State<PostCard>
     );
   }
 
-  /// The pager's navigation dots, 8 px under the box's bottom edge:
-  /// the lightbox's dots, lit 8 px, dim 6 px. Many items
-  /// shrink to fit the width rather than overflow it.
+  /// The pager's navigation dots, 8 px under the box's bottom edge: the
+  /// lightbox's dots, lit 8 px, dim 6 px. Many items shrink to fit the width
+  /// rather than overflow it.
   Widget _heroDots(int count, GlassTokens tokens, {bool inside = false}) {
     final page = _heroPage.clamp(0, count - 1);
     return Padding(
@@ -2323,8 +2445,8 @@ class _PostCardState extends State<PostCard>
           mediaUrl: url,
           heroTag: 'post_banner_$_uniquePostId',
           overlayHeader: _overlayHeader(),
-          // Taller than the cap: the clip keeps the full width and its top
-          // and bottom overflow the box, hidden.
+          // Taller than the cap: the clip keeps the full width and its top and
+          // bottom overflow the box, hidden.
           maxHeight: _heroMaxHeight(constraints.maxWidth),
           fillWidth: true,
           // Room for the player's discs on a very wide clip.
@@ -2356,7 +2478,8 @@ class _PostCardState extends State<PostCard>
       {double? height}) {
     return Container(
       decoration: BoxDecoration(
-        // border: Border.all(color: tokens.borderSubtle, width: 1), // ring off
+        // border: Border.all(color: tokens.borderSubtle, width: 1), // TRIAL:
+        // ring off, see styling_guide
         borderRadius: radius,
       ),
       child: TappableImage(
@@ -2450,12 +2573,12 @@ class _PostCardState extends State<PostCard>
   ///   - author OR channel owner (`_canManagePost`): delete, lock/unlock
   ///     comments, comment rules
   ///   - everyone: copy link, optional remove-feed-from-list, view source
-  /// Channel-owner-deleting-someone-else's-post relabels delete as "Remove
-  /// from channel" so the action and confirmation copy match the role.
-  /// The post's "…" button. It opens the canonical frosted [GlassContextMenu]
-  /// (the pills' glass: blur over a 30 % black wash) 6 px under itself.
-  /// [size] is the glyph: 18 in the header row, 22 in the hero's corner
-  /// pill.
+  /// Channel-owner-deleting-someone-else's-post relabels delete as "Remove from
+  /// channel" so the action and confirmation copy match the role. The post's
+  /// "…" button. It opens the canonical frosted [GlassContextMenu] (the pills'
+  /// glass: blur over a 30 % black wash) 6 px under itself; until then it was a
+  /// Material `PopupMenuButton` on the `surfaceDeep` panel. [size] is the
+  /// glyph: 18 in the header row, 22 in the hero's corner pill.
   Widget _buildPostMenu(
     BuildContext context,
     Post post,
@@ -2634,8 +2757,7 @@ class _PostCardState extends State<PostCard>
                                 onMore: () => _showEmojiPicker(context, post),
                               )
                           : null,
-                      // 26 so the react hitbox is big enough to hit; the
-                      // emoji 18 / count 16 of the chips.
+                      // 26; the emoji 18 / count 16 of the chips.
                       heartSize: 26,
                       emojiSize: 18,
                       countSize: 16,
@@ -2670,10 +2792,12 @@ class _PostCardState extends State<PostCard>
           const SizedBox(width: 14),
         ],
         if (tipCandidates.isNotEmpty) ...[
-          _buildActionItem(
-            icon: Icons.volunteer_activism_rounded,
+          // Tap: the tip sheet. Long press: quick tip, when on in reader
+          // settings.
+          TipActionButton(
+            candidates: tipCandidates,
             color: tokens.textDim,
-            onTap: () => showSendSheet(
+            onOpenSheet: (onTipSent) => showSendSheet(
               context: context,
               config: SendSheetConfig(
                 targetMode: SendTargetMode.pickFrom,
@@ -2681,6 +2805,8 @@ class _PostCardState extends State<PostCard>
                 title: context.l10n.tipSheetTitle,
                 confirmLabel: context.l10n.tipSheetSendTip,
                 confirmIcon: Icons.volunteer_activism_rounded,
+                isTip: true,
+                onTipSent: onTipSent,
               ),
             ),
           ),
@@ -2703,6 +2829,7 @@ class _PostCardState extends State<PostCard>
           icon: Icons.ios_share_rounded,
           color: tokens.textDim,
           onTap: () => _sharePost(post),
+          onLongPress: () => _sharePost(post, plain: true),
         ),
         const SizedBox(width: 14),
         _buildActionItem(
@@ -2807,10 +2934,12 @@ class _PostCardState extends State<PostCard>
     required Color color,
     int? count,
     VoidCallback? onTap,
+    VoidCallback? onLongPress,
   }) {
     final showCount = count != null && count > 0;
     return InkResponse(
       onTap: onTap,
+      onLongPress: onLongPress,
       radius: 20,
       child: Padding(
         // 21 px glyph, hitbox 4px larger (2px each side) for easier taps.
@@ -2840,9 +2969,11 @@ class _PostCardState extends State<PostCard>
 
   /// Copy the canonical post URL to the clipboard. Falls back to externalUrl
   /// for RSS posts where the server hasn't filled `url` yet.
-  Future<void> _sharePost(Post post) async {
+  Future<void> _sharePost(Post post, {bool plain = false}) async {
     final l10n = context.l10n;
-    final url = post.url ?? post.externalUrl;
+    // Tap: the publicos.dev link. Long press ([plain]): the post's own internet
+    // address.
+    final url = plain ? plainLinkOf(post) : shareLinkOf(post);
     if (url == null || url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2907,14 +3038,14 @@ class _PostCardState extends State<PostCard>
     return out;
   }
 
-  /// Generate a unique identifier for hero tags
-  /// Uses server ID for PublicOS posts, or externalUrl hash for external posts
+  /// Generate a unique identifier for hero tags Uses server ID for PublicOS
+  /// posts, or externalUrl hash for external posts
   ///
   /// Scoped by surface: the focused card (detail page, `interactive: false`)
   /// gets a `detail_` prefix, so its media never shares a tag with the same
-  /// post's card in the list and does NOT fly between the two on push/pop.
-  /// Each card's own tap-to-fullscreen still animates, because the card and
-  /// its overlay share that tag.
+  /// post's card in the list and does NOT fly between the two on push/pop. Each
+  /// card's own tap-to-fullscreen still animates, because the card and its
+  /// overlay share that tag.
   String get _uniquePostId =>
       widget.interactive ? _basePostId : 'detail_$_basePostId';
 
@@ -3001,13 +3132,10 @@ class _PostCardState extends State<PostCard>
 
     final author = _authorContact;
     if (author != null) {
-      final hasPublicOSProfile = author.publicosAddress != null &&
-          author.publicosAddress!.eip55With0x !=
-              '0x0000000000000000000000000000000000000000';
       return GlassContactIcon(
         contact: author,
         size: _avatarSize,
-        onTap: hasPublicOSProfile ? () => _navigateToProfile(author) : null,
+        onTap: _authorProfileTap(),
       );
     }
 
@@ -3022,9 +3150,9 @@ class _PostCardState extends State<PostCard>
     // No signed author = an unsigned PublicOS post or a classic RSS / Atom /
     // JSON Feed item: Core sets `postAuthorAddress` only when the post is
     // signed and its author is an address, so such an author is a label and
-    // never a contact (no picture lookup). The face is the
-    // FEED's — its own image → site favicon → RSS glyph. The name slot
-    // shows the author as written.
+    // never a contact (no picture lookup, spec § Authors). The face is the
+    // FEED's — its own image → site favicon → RSS glyph. The name slot shows
+    // the author as written.
     final feedUrl = widget.post.feedUrl;
     if (feedUrl != null && feedUrl.isNotEmpty) {
       return FeedFavicon(
@@ -3036,7 +3164,7 @@ class _PostCardState extends State<PostCard>
     }
 
     // Nothing resolvable — generic feed icon. No discovery/owner avatar
-    // borrow (that misattributes authorship); the "via" subtitle still
+    // borrow (that misattributed authorship); the "via" subtitle still
     // surfaces the discovery account separately.
     return Container(
       width: _avatarSize,
@@ -3051,6 +3179,17 @@ class _PostCardState extends State<PostCard>
         size: 18,
       ),
     );
+  }
+
+  /// The one tap that opens the post's author, shared by the avatar and the
+  /// name. Null when the author has no PublicOS profile to open.
+  VoidCallback? _authorProfileTap() {
+    final author = _authorContact;
+    if (author == null) return null;
+    final hasPublicOSProfile = author.publicosAddress != null &&
+        author.publicosAddress!.eip55With0x !=
+            '0x0000000000000000000000000000000000000000';
+    return hasPublicOSProfile ? () => _navigateToProfile(author) : null;
   }
 
   /// Navigate to profile page for a PublicOS contact
@@ -3089,11 +3228,9 @@ class _PostCardState extends State<PostCard>
     if (emoji != null) _addReaction(post, emoji);
   }
 
-  /// Show reaction details sheet with who reacted
-  /// Open the who-reacted sheet NOW on what the card already shows (counts,
-  /// the tapped emoji's tab); the sheet fetches the reactor lists and fills
-  /// itself in place (a signed GET plus serial contact lookups before the
-  /// sheet would make every tap feel stuck).
+  /// Show reaction details sheet with who reacted Open the who-reacted sheet
+  /// NOW on what the card already shows (counts, the tapped emoji's tab); the
+  /// sheet fetches the reactor lists and fills itself in place.
   void _showReactionDetails(BuildContext context, Post post, String? emoji) {
     if (!PublicOSChannels.canReact(post)) return;
 
@@ -3136,8 +3273,8 @@ class _PostCardState extends State<PostCard>
         initialEmoji: emoji,
         currentUserId: myAddress,
         onRemoveMyReaction: (em) => _removeMyReaction(post, em),
-        // The add row: extra reactions are added here, and the
-        // card's button jellies behind the sheet.
+        // The add row: extra reactions are added here, and the card's button
+        // jellies behind the sheet.
         onAddReaction: (em) => _addReaction(post, em),
       ),
     );
@@ -3215,9 +3352,9 @@ class _PostCardState extends State<PostCard>
   Widget _buildImageScroller(List<PostMediaItem> items, {double startInset = 0}) {
     if (items.isEmpty) return const SizedBox.shrink();
     final tokens = GlassTokens.of(context);
-    // Files (a MIME that is neither image nor video) render as openable
-    // tiles; the overlay's gallery holds the media only, so
-    // a media tile's place in it is its index among the media.
+    // Files (a MIME that is neither image nor video) render as openable tiles;
+    // the overlay's gallery holds the media only, so a media tile's place in it
+    // is its index among the media.
     final gallery = [
       for (var i = 0; i < items.length; i++)
         if (!items[i].isFile)
@@ -3256,7 +3393,8 @@ class _PostCardState extends State<PostCard>
           builder: (context, constraints) {
             return Container(
               decoration: BoxDecoration(
-                // border: Border.all(color: tokens.borderSubtle, width: 1), // ring off
+                // border: Border.all(color: tokens.borderSubtle, width: 1), //
+                // TRIAL: ring off, see styling_guide
                 borderRadius: BorderRadius.circular(14),
               ),
               child: NaturalRatioMedia(
@@ -3309,15 +3447,16 @@ class _PostCardState extends State<PostCard>
             borderRadius: BorderRadius.circular(14),
             child: Container(
               decoration: BoxDecoration(
-                // border: Border.all(color: tokens.borderSubtle, width: 1), // ring off
+                // border: Border.all(color: tokens.borderSubtle, width: 1), //
+                // TRIAL: ring off, see styling_guide
                 borderRadius: BorderRadius.circular(14),
               ),
               child: TappableMedia(
                 mediaUrl: mediaUrl,
                 heroTag: 'post_media_${_uniquePostId}_$index',
                 overlayHeader: _overlayHeader(),
-                // The overlay pages through the post's media from this
-                // tile, with dots; files stay out.
+                // The overlay pages through the post's media from this tile,
+                // with dots; files stay out.
                 gallery: gallery,
                 galleryIndex: gallery.indexWhere((g) => g.url == mediaUrl),
                 width: width,
@@ -3325,8 +3464,7 @@ class _PostCardState extends State<PostCard>
                 borderRadius: BorderRadius.circular(14),
                 // Video tiles fill the same fixed footprint as image tiles and
                 // tap through to the focused video screen — no inline player
-                // per tile (a feed scroll must not hold a fleet of
-                // video controllers).
+                // per tile (see media wiki: feed-scroll controller fleet).
                 videoTapToFullscreen: true,
                 errorBuilder: (context, error, stackTrace) =>
                     const SizedBox.shrink(),
@@ -3480,12 +3618,12 @@ class _PostCardState extends State<PostCard>
   }
 
   /// Lock or unlock commenting on this single post via `updatePost`'s
-  /// `commentPolicy` (the sole source of truth). Toggle flips between current policy and "closed" — when
+  /// `commentPolicy`. Toggle flips between current policy and "closed" — when
   /// unlocking from "closed", we restore "open" (the default). Author and
   /// channel owner can both flip it; reactionPolicy is left untouched
   /// (independently togglable). On success we trigger `onPostUpdated` so the
-  /// caller can refresh the post and the menu's lock label flips on the
-  /// next open.
+  /// caller can refresh the post and the menu's lock label flips on the next
+  /// open.
   Future<void> _toggleComments(Post post) async {
     final l10n = context.l10n;
     final channelSlug = post.channelSlug;
@@ -3630,4 +3768,39 @@ class _PostCardState extends State<PostCard>
       }
     }
   }
+}
+
+/// What a post's header lines are built from.
+class _PostIdentity {
+  /// The post is not one of ours by its address: an article from an outside
+  /// feed. No owner, no signature to look for, no provider to check.
+  final bool outside;
+
+  /// The list follows this feed through a profile's tab (profile + tab key).
+  final bool hasFoundAt;
+
+  /// The channel's or feed's own title; the slug or the site's host at worst.
+  final String? title;
+
+  /// The label the found-at profile gave its tab, when the contact is loaded.
+  final String? tabLabel;
+
+  /// Found on the channel owner's own profile: the tab names the feed.
+  final bool tabNamesFeed;
+
+  /// Found on the author's own profile: line 2 is "on tab" alone.
+  final bool foundOnAuthor;
+
+  /// An outside article that names no author.
+  final bool authorless;
+
+  const _PostIdentity({
+    required this.outside,
+    required this.hasFoundAt,
+    required this.title,
+    required this.tabLabel,
+    required this.tabNamesFeed,
+    required this.foundOnAuthor,
+    required this.authorless,
+  });
 }

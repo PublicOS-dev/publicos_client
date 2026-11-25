@@ -96,10 +96,22 @@ class _MessagesViewState extends State<MessagesView> {
   // Settings-driven UX flags
   bool _showBanner = true;
 
-  List<_ConversationData> get _conversations =>
-      _currentConsentFilter == 'allowed'
-          ? _allowedConversations
-          : _unknownConversations;
+  /// TEST: no separate Requests list. A new conversation (consent `unknown`)
+  /// shows in the conversations list with the rest, ordered by its last
+  /// message, and the Requests chip is hidden. Opening one still shows the
+  /// accept / block banner in the chat. Set to false to get the Requests chip
+  /// and list back; nothing else changed.
+  static const bool _kSkipRequests = true;
+
+  List<_ConversationData> get _conversations {
+    if (_kSkipRequests) {
+      return _sortWithGroupUpdatedAtBottom(
+          [..._allowedConversations, ..._unknownConversations]);
+    }
+    return _currentConsentFilter == 'allowed'
+        ? _allowedConversations
+        : _unknownConversations;
+  }
 
   @override
   void initState() {
@@ -663,6 +675,10 @@ class _MessagesViewState extends State<MessagesView> {
 
   Future<void> _openKeychain() async {
     final keyBefore = PublicOS.currentXmtpKeyLabel;
+    // Drop the search box's focus first: a route that pops hands focus back to
+    // whatever held it, and the keyboard would rise again when the sheet
+    // closes.
+    FocusManager.instance.primaryFocus?.unfocus();
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -722,7 +738,7 @@ class _MessagesViewState extends State<MessagesView> {
           isShowingRequests: _currentConsentFilter == 'unknown',
           showPersonal: _showPersonal,
           showGroups: _showGroups,
-          unknownCount: _unknownConversations.length,
+          unknownCount: _kSkipRequests ? 0 : _unknownConversations.length,
           currentKeyLabel: PublicOS.currentXmtpKeyLabel,
           onTapRequests: () => setState(() {
             // Toggle: tap Requests to view pending, tap again to go back

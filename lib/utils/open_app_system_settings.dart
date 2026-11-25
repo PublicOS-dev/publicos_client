@@ -14,3 +14,25 @@ Future<bool> openAppSystemSettings() async {
     return false;
   }
 }
+
+/// Opens the phone's security settings, where a screen lock is set. Android
+/// only; false elsewhere.
+Future<bool> openDeviceSecuritySettings() async {
+  try {
+    return await _channel.invokeMethod<bool>('openSecurity') ?? false;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Asks Android to delete ALL of this app's data and end the process (the
+/// same as Settings > Apps > Clear storage). On success this call never
+/// returns. Android only; false elsewhere, and the caller falls back to
+/// `PublicOSAuth.wipeLocalData`.
+Future<bool> clearAppDataNatively() async {
+  try {
+    return await _channel.invokeMethod<bool>('clearAppData') ?? false;
+  } catch (_) {
+    return false;
+  }
+}

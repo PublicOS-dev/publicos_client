@@ -49,6 +49,13 @@ const kPostLangNames = <String, String>{
 /// final body  = await svc.translate(post.body,  from: src!, to: svc.deviceLanguage);
 /// final title = await svc.translate(post.title, from: src,  to: svc.deviceLanguage);
 /// ```
+/// A language pack did not arrive within [TranslationService.downloadTimeout].
+class TranslationDownloadTimedOut implements Exception {
+  const TranslationDownloadTimedOut();
+  @override
+  String toString() => 'the language download timed out';
+}
+
 class TranslationService {
   TranslationService._();
   static final TranslationService instance = TranslationService._();
@@ -103,11 +110,26 @@ class TranslationService {
       throw ArgumentError('Unsupported translation pair: $from -> $to');
     }
     if (!await _modelManager.isModelDownloaded(f.bcpCode)) {
-      await _modelManager.downloadModel(f.bcpCode, isWifiRequired: requireWifi);
+      await _download(f.bcpCode, requireWifi);
     }
     if (!await _modelManager.isModelDownloaded(t.bcpCode)) {
-      await _modelManager.downloadModel(t.bcpCode, isWifiRequired: requireWifi);
+      await _download(t.bcpCode, requireWifi);
     }
+  }
+
+  /// How long one language pack may take before the card says it failed.
+  static const downloadTimeout = Duration(seconds: 90);
+
+  /// One pack, with a time limit. ML Kit's own call never ends when Wi-Fi is
+  /// required and there is none. The download itself is not cancelled: it may
+  /// still finish later, and the next try then finds the pack on disk.
+  Future<void> _download(String bcpCode, bool requireWifi) async {
+    final pending =
+        _modelManager.downloadModel(bcpCode, isWifiRequired: requireWifi);
+    // A late failure of the abandoned call must not surface as an unhandled error.
+    pending.then((_) {}, onError: (_) {});
+    await pending.timeout(downloadTimeout,
+        onTimeout: () => throw const TranslationDownloadTimedOut());
   }
 
   /// Translate [text] from->to, downloading packs if needed. Returns [text]
@@ -193,6 +215,7 @@ class TranslationPrefs {
         key: kEnabledKey,
         value: value ? 'true' : 'false',
         isSystem: true,
+
       );
       await PublicOSSettings.setSetting(kEnabledKey, record);
     } catch (_) {}
@@ -221,6 +244,7 @@ class TranslationPrefs {
         key: kWifiOnlyKey,
         value: value ? 'true' : 'false',
         isSystem: true,
+
       );
       await PublicOSSettings.setSetting(kWifiOnlyKey, record);
     } catch (_) {}
@@ -266,6 +290,7 @@ class TranslationPrefs {
         key: kDisabledSourcesKey,
         value: next.toList().join(','),
         isSystem: true,
+
       );
       await PublicOSSettings.setSetting(kDisabledSourcesKey, record);
     } catch (_) {}
@@ -281,6 +306,7 @@ class TranslationPrefs {
         key: kDisabledSourcesKey,
         value: '',
         isSystem: true,
+
       );
       await PublicOSSettings.setSetting(kDisabledSourcesKey, record);
     } catch (_) {}

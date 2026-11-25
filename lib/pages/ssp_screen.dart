@@ -1075,13 +1075,14 @@ class _SspCard extends StatelessWidget {
           ),
         ),
         GlassContactIcon(
+          opensProfile: true,
           contact: ownerContact,
           address: ssp.owner.eip55With0x,
           size: 20,
         ),
         const SizedBox(width: 8),
         Flexible(
-          child: Text(
+          child: ContactProfileTap(contact: ownerContact, address: ssp.owner.eip55With0x, child: Text(
             name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1090,7 +1091,7 @@ class _SspCard extends StatelessWidget {
               color: tokens.starkWhite,
               letterSpacing: 0.3,
             ),
-          ),
+          )),
         ),
       ],
     );

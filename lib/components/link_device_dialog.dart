@@ -6,6 +6,7 @@ import 'package:publicos_client/components/key_lifetime_line.dart';
 import 'package:flutter/services.dart';
 import 'package:publicos_core/publicos_core.dart';
 import 'package:publicos_client/components/phigital_loading_widget.dart';
+import 'package:publicos_client/components/protocol_agreement_sheet.dart';
 import 'package:publicos_client/l10n/l10n_ext.dart';
 import 'package:publicos_client/theme/glass_theme.dart';
 import 'package:publicos_client/widgets/error/error_l10n.dart';
@@ -91,7 +92,7 @@ class _LinkDeviceDialogState extends State<_LinkDeviceDialog> {
   NameValidationResult? _nameValidation;
   NameTierLimits? _tierLimits;
 
-  // 1 hour: the publicos_client UX default.
+  // 1 hour matches the Q1 decision (publicos_client UX default).
   static const Duration _signValidity = Duration(hours: 1);
 
   @override
@@ -185,6 +186,30 @@ class _LinkDeviceDialogState extends State<_LinkDeviceDialog> {
   Future<void> _sign() async {
     if (!_inputValid) return;
     final l10n = context.l10n;
+    // NEW ACCOUNT only: the account accepts the protocol agreement when it is
+    // made (the consent carries the current version), so show it before
+    // signing; nothing is signed if the user doesn't accept. Adding a session
+    // shows nothing: that account accepted it at creation. Ported from the
+    // desktop's dialog: this path had no agreement.
+    if (_variant == _LinkVariant.newAccount) {
+      final ({BigInt version, String text})? agreement;
+      try {
+        agreement =
+            await PublicOSAgreements.currentText(PublicOSAgreements.kindProtocol);
+      } catch (e) {
+        Log.e('LinkDevice', 'Protocol agreement load failed: $e');
+        if (!mounted) return;
+        setState(() => _loadError = l10n.protocolAgreementLoadFailed);
+        return;
+      }
+      // No version published: the contract treats that as accepted.
+      if (agreement != null) {
+        if (!mounted) return;
+        final accepted =
+            await showProtocolAgreementSheet(context, agreement: agreement);
+        if (!accepted || !mounted) return;
+      }
+    }
     setState(() => _isSigning = true);
     final input = _inputController.text.trim();
     try {
@@ -376,10 +401,10 @@ class _LinkDeviceDialogState extends State<_LinkDeviceDialog> {
     );
   }
 
-  /// Key lifetime: how long the key this device
-  /// adds to the account lasts. Signed into the consent, so it locks with the
-  /// QR; the sponsor sees it before approving. A new account's first key is
-  /// always permanent, so this shows only on "add to my account".
+  /// Key lifetime: how long the key this device adds to the account lasts.
+  /// Signed into the consent, so it locks with the QR; the sponsor sees it
+  /// before approving. A new account's first key is always permanent, so this
+  /// shows only on "add to my account".
   Widget _lifetimePicker(GlassTokens tokens) {
     final l10n = context.l10n;
     final locked = _signedClaim != null;
@@ -685,6 +710,11 @@ class _LinkDeviceDialogState extends State<_LinkDeviceDialog> {
     if (counting) {
       final mins = (_remainingSec ~/ 60).clamp(0, 9999);
       final secs = (_remainingSec % 60).clamp(0, 59);
+      // An hour or more reads as hours: the claim-page QR lives 3 hours, and
+      // '179:59' crowded the button. Under an hour, mm:ss.
+      final left = _remainingSec >= 3600
+          ? '${_remainingSec ~/ 3600}h ${((_remainingSec % 3600) ~/ 60).toString().padLeft(2, '0')}m'
+          : '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
       final stale = _remainingSec <= 60;
       final color = stale ? tokens.fallbackAccent : tokens.connectedAccent;
       // Same button shape/place as the sign/signing states (disabled, tinted
@@ -704,14 +734,13 @@ class _LinkDeviceDialogState extends State<_LinkDeviceDialog> {
           children: [
             Icon(Icons.schedule_rounded, color: color, size: 16),
             const SizedBox(width: 8),
-            // "QR expires in mm:ss". Half the dialog's
-            // width, so it shrinks rather than overflows on a narrow phone.
+            // "QR expires in mm:ss". Half the dialog's width, so it shrinks
+            // rather than overflows on a narrow phone.
             Flexible(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
-                  context.l10n.linkDeviceDialogQrExpiresIn(
-                      '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}'),
+                  context.l10n.linkDeviceDialogQrExpiresIn(left),
                   maxLines: 1,
                   style: TextStyle(
                     color: color,

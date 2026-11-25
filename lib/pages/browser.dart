@@ -11,6 +11,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:publicos_client/components/star_button.dart';
 import 'package:publicos_client/components/feeds/add_to_lists_sheet.dart';
 import 'package:publicos_client/components/glass_context_menu.dart';
 import 'package:publicos_client/components/nft_info_dialog.dart';
@@ -21,6 +22,8 @@ import 'package:publicos_client/components/feeds/posts_list.dart';
 import 'package:publicos_client/widgets/content_metrics_listener.dart';
 import 'package:publicos_client/widgets/image_overlay.dart'; // Ensure ImageOverlay is imported
 import 'package:publicos_client/l10n/l10n_ext.dart';
+import 'package:publicos_client/components/chat_no_key_state.dart';
+import 'package:publicos_client/components/keychain/keychain_sheet.dart';
 import 'package:publicos_client/widgets/error/error_l10n.dart';
 // import 'package:go_router/go_router.dart'; // No longer used
 import 'package:publicos_client/app_routes.dart'; // Import for ContactIdentifierType and BrowserTab
@@ -55,6 +58,7 @@ import 'package:publicos_client/providers/theme_provider.dart';
 import 'package:publicos_client/router.dart';
 import 'package:publicos_client/widgets/fullscreen_overlay.dart';
 import 'package:publicos_client/theme/glass_theme.dart';
+import 'package:publicos_client/components/phigital_loading_widget.dart';
 import 'package:publicos_client/components/pixel_rain_loading_label.dart';
 import 'package:publicos_client/components/flag_sheet.dart';
 
@@ -299,6 +303,24 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
   // itself is a member somewhere; its channels appearing as individual list
   // items do NOT count.
   bool _isFollowingAccount = false;
+
+  /// Is the account on the profile tab STARRED? A starred contact is one the
+  /// user gets chain notifications about. Read with the follow state, written
+  /// by [_toggleStarCurrentAccount].
+  bool _isStarred = false;
+
+  /// The star is offered on another account's profile, never on the user's
+  /// own and never on the publicos org (always starred, no toggle).
+  bool get _starShown =>
+      _contact?.publicosAddress != null &&
+      !_selfProfile &&
+      !PublicOSContacts.isAlwaysStarred(_contact!.publicosAddress!);
+
+  /// Past four buttons the row is too tight on a phone, so Edit moves into
+  /// the "…" menu. That is exactly one case: another account's org that the
+  /// user can edit (star + follow + edit + "…" + the tabs chevron).
+  bool get _editInOverflow =>
+      _starShown && _contact?.isOrgAccount == true && _isOrgMember;
   bool _togglingAccountFollow = false;
   // Opener for the hosted chat's conversation-settings sheet, bubbled up by
   // SimpleChatScreen once its topic resolves (null = no topic yet). Drives the
@@ -2922,20 +2944,41 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
                           ),
                           const SizedBox(width: 8),
                         ],
-                        // QR + Share ("Copy profile link") + Flag live in
-                        // the profile "…" menu (otherwise there are too many
+                        // QR + Share ("Copy profile link") + Flag live in the
+                        // profile "…" menu (otherwise there are too many
                         // buttons on an org you belong to). See below Edit.
                         //
                         // Every profile-only button pads `top: 8*progress` (not
-                        // a constant) so it doesn't inflate the collapsed action
-                        // row: the row is center-aligned, and that inflation
-                        // pushed the dropdown + avatar ~4px below where they sit
-                        // on the management tab. Collapsed matches management
-                        // exactly; expanded keeps the +8 offset.
-                        // Account-based Follow — profile tab, other accounts only
-                        // (following yourself is not a thing). Additive to the
-                        // channel-tab heart, which is a separate single-feed
-                        // affordance. `_displayedTab` AND-check per the `app` block.
+                        // a constant) so it doesn't inflate the collapsed
+                        // action row: the row is center-aligned, and that
+                        // inflation pushed the dropdown + avatar ~4px below
+                        // where they sit on the management tab. Collapsed
+                        // matches management exactly; expanded keeps the +8
+                        // offset. Account-based Follow — profile tab, other
+                        // accounts only (following yourself is not a thing).
+                        // Additive to the channel-tab heart, which is a
+                        // separate single-feed affordance. `_displayedTab`
+                        // AND-check per the `app` block. Star — profile tab,
+                        // other accounts only, never the publicos org. Left of
+                        // the follow button. Fills yellow with a bounce and a
+                        // few confetti when turned on.
+                        if (_currentTab == BrowserTab.profile &&
+                            _displayedTab == BrowserTab.profile &&
+                            _starShown) ...[
+                          Padding(
+                            padding:
+                                EdgeInsets.only(right: 8.0, top: 8 * progress),
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: StarButton(
+                                starred: _isStarred,
+                                onTap: _toggleStarCurrentAccount,
+                                idleColor: _pillGlyph(iconColor),
+                                pill: _glassPill,
+                              ),
+                            ),
+                          ),
+                        ],
                         if (_currentTab == BrowserTab.profile &&
                             _displayedTab == BrowserTab.profile &&
                             _contact?.publicosAddress != null &&
@@ -2987,6 +3030,9 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
                         // light-red chip to leave edit mode.
                         if (_currentTab == BrowserTab.profile &&
                             _displayedTab == BrowserTab.profile &&
+                            // In the "…" menu instead when the row would pass
+                            // four buttons (see [_editInOverflow]).
+                            !_editInOverflow &&
                             (_selfProfile ||
                                 (_contact?.isOrgAccount == true &&
                                     _isOrgMember))) ...[
@@ -4132,14 +4178,35 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
     );
   }
 
+  /// The channel tab on screen: the one in the profile's tab list, else the
+  /// record the landing carried (Go to feed, a shared post's back step).
+  ///
+  /// The list is empty for a while on a profile this device had never loaded:
+  /// the content shows as soon as a local stub of the contact exists, before
+  /// the chain answers. Looking only in the list threw "RSS tab not found"
+  /// there. Null = not known yet.
+  Record? _currentChannelTab() {
+    for (final tab in _profileTabs) {
+      if (tab.routerSubtype == RouterSubtype.channel &&
+          (tab.metadata['name'] as String?) == _currentCustomTabName) {
+        return tab;
+      }
+    }
+    final landed = _landingTabItem?.record;
+    if (landed != null &&
+        landed.routerSubtype == RouterSubtype.channel &&
+        (landed.metadata['name'] as String?) == _currentCustomTabName) {
+      return landed;
+    }
+    return null;
+  }
+
   Widget _buildRssWidget() {
-    // Find the current RSS tab from profile tabs
-    final rssTab = _profileTabs.firstWhere(
-      (tab) =>
-          tab.routerSubtype == RouterSubtype.channel &&
-          (tab.metadata['name'] as String?) == _currentCustomTabName,
-      orElse: () => throw StateError('RSS tab not found'),
-    );
+    final rssTab = _currentChannelTab();
+    if (rssTab == null) {
+      return const Center(
+          child: PhigitalLoadingWidget(size: 28, showShadows: false));
+    }
 
     // A roster of one — the door that gains the header: same channel, same
     // look as the feeds tab, because the header comes from the fetch result,
@@ -4215,6 +4282,20 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
   /// key IS this chat's peer (self-chat → redirect to profile), or it rebinds
   /// the DM to (new key ↔ peer) — a different conversation — so rebuild to let
   /// the ValueKey(active inbox) on SimpleChatScreen remount it and reload.
+  /// The no-key tile's action: the keychain, then the chat if an inbox was
+  /// loaded there.
+  Future<void> _loadKeysForChat() async {
+    final before = PublicOS.clientXmtpInboxId;
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const KeychainSheet(),
+    );
+    if (!mounted || PublicOS.clientXmtpInboxId == before) return;
+    await _onActiveKeyChanged();
+  }
+
   Future<void> _onActiveKeyChanged() async {
     await _checkAndHandleSelfChatTab();
     if (mounted && _currentTab == BrowserTab.chat) {
@@ -4333,9 +4414,13 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
         // For group chats, pass null as inboxId so SimpleChatScreen uses the
         // contact's conversation topic directly (no peer inbox ID for groups).
         // Pass `topic` defensively when this browser was opened with a topic
-        // identifier (notification tap); SimpleChatScreen uses it as a
-        // fallback when inboxId resolution didn't populate.
-        return _contact != null
+        // identifier (notification tap); SimpleChatScreen uses it as a fallback
+        // when inboxId resolution didn't populate. No inbox loaded: the chat is
+        // not built (it resolves a topic against the loaded inbox); a "load a
+        // key" tile stands in and opens the keychain.
+        return _contact != null && PublicOS.clientXmtpInboxId == null
+            ? ChatNoKeyState(onLoadKeys: _loadKeysForChat)
+            : _contact != null
             ? SimpleChatScreen(
                 // Keyed on the active client inbox so switching XMTP keys
                 // remounts the screen → fresh _initialize() re-resolves the
@@ -4409,12 +4494,8 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
 
   void _showAddToListBottomSheet() async {
     // Get the current RSS tab info
-    final rssTab = _profileTabs.firstWhere(
-      (tab) =>
-          tab.routerSubtype == RouterSubtype.channel &&
-          (tab.metadata['name'] as String?) == _currentCustomTabName,
-      orElse: () => throw StateError('RSS tab not found'),
-    );
+    final rssTab = _currentChannelTab();
+    if (rssTab == null) return;
 
     final result = await showAddToListsSheet(
       context,
@@ -4693,12 +4774,8 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
     }
 
     try {
-      final rssTab = _profileTabs.firstWhere(
-        (tab) =>
-            tab.routerSubtype == RouterSubtype.channel &&
-            (tab.metadata['name'] as String?) == _currentCustomTabName,
-        orElse: () => throw StateError('RSS tab not found'),
-      );
+      final rssTab = _currentChannelTab();
+      if (rssTab == null) throw StateError('RSS tab not found');
 
       final feedUrl = rssTab.value;
       if (feedUrl.isEmpty) {
@@ -4709,7 +4786,8 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
       var inAnyList = false;
       for (final list in await PublicOSFeedLists.getUserLists()) {
         final feedsInList = await PublicOSFeedLists.getFeedsInList(list.id);
-        if (feedsInList.any((f) => f.feedUrl == feedUrl)) {
+        if (feedsInList
+            .any((f) => feedUrlKey(f.feedUrl) == feedUrlKey(feedUrl))) {
           inAnyList = true;
           break;
         }
@@ -4726,6 +4804,7 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
   /// indexed lookup; called whenever the profile contact resolves and after a
   /// follow/unfollow. Self and address-less profiles are never "followed".
   Future<void> _refreshAccountFollowState() async {
+    _refreshStarState();
     final addr = _contact?.publicosAddress?.eip55With0x;
     final session = PublicOS.sessionBlockchainAddress;
     if (addr == null || session == null || _selfProfile) {
@@ -4738,6 +4817,35 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
         .isFollowingAccount(session: session, account: addr);
     if (!mounted) return;
     setState(() => _isFollowingAccount = following);
+  }
+
+  /// Re-read the star of the account on the profile tab. Runs with the follow
+  /// read, so it follows the same lifecycle.
+  Future<void> _refreshStarState() async {
+    final account = _contact?.publicosAddress;
+    var starred = false;
+    if (account != null && !_selfProfile) {
+      try {
+        starred = await PublicOSContacts.isStarred(account);
+      } catch (_) {}
+    }
+    if (mounted && starred != _isStarred) setState(() => _isStarred = starred);
+  }
+
+  /// Star or un-star the account on the profile tab. A profile that is not a
+  /// stored contact yet is saved by the same call.
+  Future<void> _toggleStarCurrentAccount() async {
+    final contact = _contact;
+    if (contact?.publicosAddress == null || !_starShown) return;
+    final next = !_isStarred;
+    HapticFeedback.lightImpact();
+    setState(() => _isStarred = next); // the button answers at once
+    try {
+      final now = await PublicOSContacts.setStarred(contact!, next);
+      if (mounted && now != _isStarred) setState(() => _isStarred = now);
+    } catch (_) {
+      if (mounted) setState(() => _isStarred = !next);
+    }
   }
 
   Future<void> _toggleFollowCurrentAccount() async {
@@ -4841,6 +4949,14 @@ class _BrowserState extends State<Browser> with TickerProviderStateMixin {
       position: anchor,
       frosted: true,
       items: [
+        // Edit, when the row had no room for it (see [_editInOverflow]).
+        if (_editInOverflow)
+          GlassContextMenuItem(
+            icon: _isEditMode ? Icons.edit_off_rounded : Icons.edit_rounded,
+            label:
+                _isEditMode ? l10n.browserStopEditing : l10n.browserEditProfile,
+            onTap: () => setState(() => _isEditMode = !_isEditMode),
+          ),
         GlassContextMenuItem(
           icon: Icons.qr_code_2_rounded,
           label: l10n.desktopProfileQr,

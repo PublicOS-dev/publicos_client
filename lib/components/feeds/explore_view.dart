@@ -54,6 +54,12 @@ class ExploreView extends StatefulWidget {
   /// surface gets no callback of its own.
   final bool showFullScreenLoader;
   final ValueChanged<bool>? onLoadingChanged;
+
+  /// As PostsList passes them: a refresh running behind a list already on
+  /// screen (the header's hint; every Explore row) and the "N new" chip docked
+  /// in the header (Latest posts only).
+  final ValueChanged<bool>? onRefreshingChanged;
+  final ValueChanged<Widget?>? onHeldDocked;
   const ExploreView({
     super.key,
     required this.mode,
@@ -65,6 +71,8 @@ class ExploreView extends StatefulWidget {
     this.scrollController,
     this.showFullScreenLoader = true,
     this.onLoadingChanged,
+    this.onRefreshingChanged,
+    this.onHeldDocked,
   });
 
   @override
@@ -72,11 +80,11 @@ class ExploreView extends StatefulWidget {
 }
 
 class _ExploreViewState extends State<ExploreView> {
-  /// Hot posts / Hot feeds: the trending lists (both load together, the
-  /// window chips switch them). Latest: the network's newest posts, no chips.
+  /// Hot posts / Hot feeds: one trending list each (the window chips
+  /// switch it). Latest: the network's newest posts, no chips.
   late final PostSource _source = widget.mode == ExploreMode.latest
       ? LatestPostSource()
-      : ExplorePostSource();
+      : ExplorePostSource(feeds: widget.mode == ExploreMode.hotFeeds);
 
   ExplorePostSource? get _hot {
     final s = _source;
@@ -97,11 +105,17 @@ class _ExploreViewState extends State<ExploreView> {
     // inside initState. The first build reads the state directly.
     _source.addListener(_onSourceChanged);
     _reportLoading();
+    _reportRefreshing();
   }
   @override
   void dispose() {
     _source.removeListener(_onSourceChanged);
     _source.dispose();
+    // Leaving mid-refresh: lower the header's hint (as PostSurface does).
+    if (_lastReportedRefreshing) {
+      final cb = widget.onRefreshingChanged;
+      WidgetsBinding.instance.addPostFrameCallback((_) => cb?.call(false));
+    }
     super.dispose();
   }
 
@@ -109,6 +123,7 @@ class _ExploreViewState extends State<ExploreView> {
     if (!mounted) return;
     setState(() {});
     _reportLoading();
+    _reportRefreshing();
   }
 
   /// Null until the first report, which always goes up: the host raises its
@@ -121,6 +136,22 @@ class _ExploreViewState extends State<ExploreView> {
     final v = _isLoading;
     if (v == _lastReportedLoading) return;
     _lastReportedLoading = v;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) cb(v);
+    });
+  }
+
+  /// Hot feeds has no posts surface to report the refresh running behind
+  /// its rows (the header's hint), so the view reports it itself; on the
+  /// posts rows the surface does.
+  bool _lastReportedRefreshing = false;
+  void _reportRefreshing() {
+    final cb = widget.onRefreshingChanged;
+    if (cb == null || widget.mode != ExploreMode.hotFeeds) return;
+    final s = _source.state;
+    final v = s is PostsReady && s.refreshing;
+    if (v == _lastReportedRefreshing) return;
+    _lastReportedRefreshing = v;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) cb(v);
     });
@@ -153,6 +184,8 @@ class _ExploreViewState extends State<ExploreView> {
                   layoutMode: widget.layoutMode,
                   scrollController: widget.scrollController,
                   showFullScreenLoader: widget.showFullScreenLoader,
+                  onRefreshingChanged: widget.onRefreshingChanged,
+                  onHeldDocked: widget.onHeldDocked,
                 )
               : _buildChannels(theme, tokens),
         ),

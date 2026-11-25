@@ -245,15 +245,12 @@ class FeedsNavigationDrawer extends StatelessWidget {
     // Local copy so the `is` checks below promote — `selected` is a public
     // field and public fields aren't promotable.
     final sel = selected;
-    // Single "My Channels" section. Feeds first, then forums, preserving
-    // server order within each group. Forum channels get a small glyph
-    // badge inside the row instead of a separate section — the server
-    // doesn't actually distinguish them as types (it's derived from
-    // posting_policy), so the drawer shouldn't either. Only `open`
-    // channels (anyone can post) count as forums; `approved` and `owner`
-    // both group with feeds.
-    final feedChannels = channels.where((c) => !c.isOpen).toList();
-    final forumChannels = channels.where((c) => c.isOpen).toList();
+    // Single "My Channels" section. Feeds first, then forums, preserving server
+    // order within each group. Forum channels get a small glyph badge inside
+    // the row instead of a separate section. Forum = the owner's `layout`, not
+    // who may post.
+    final feedChannels = channels.where((c) => !c.isForumLayout).toList();
+    final forumChannels = channels.where((c) => c.isForumLayout).toList();
     final sortedChannels = [...feedChannels, ...forumChannels];
 
     return Material(
@@ -996,7 +993,7 @@ class _ChannelRowState extends State<_ChannelRow> {
                     ],
                   ),
                 ),
-                if (channel.isOpen)
+                if (channel.isForumLayout)
                   Padding(
                     padding: const EdgeInsets.only(left: 6, right: 2),
                     child: Icon(

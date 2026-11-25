@@ -177,9 +177,11 @@ Future<bool> runChainNotificationSync() async {
       return (n != null && n.trim().isNotEmpty) ? n.trim() : null;
     }
 
-    // Cap per sweep — the cold-start cursor seed already prevents history
-    // dumps; this just bounds a genuinely busy window. items is newest-first,
-    // so the most recent events win the cap.
+    // Cap per sweep. History is kept out before this point: the first chain
+    // and wallet sweep on a device hands back nothing (Core), and the first
+    // inbox pull only its newest three (pullSocialInbox). This just bounds a
+    // genuinely busy window. items is newest-first, so the most recent events
+    // win the cap.
     final l10n = await isolateLocalizations();
     for (final item in items.take(8)) {
       // A social row quotes the real text, fetched from its host.

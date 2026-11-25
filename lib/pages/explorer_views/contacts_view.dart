@@ -67,6 +67,12 @@ class _ContactsViewState extends State<ContactsView> {
   // Filter / sort / search state
   bool _showPersonal = true;
   bool _showOrgs = true;
+
+  /// The Starred chip: on = only starred contacts, the ones the user gets chain
+  /// notifications about; off = every stored contact. On by default, kept on
+  /// the device under [_starredOnlyKey].
+  bool _starredOnly = true;
+  static const String _starredOnlyKey = 'contacts_starred_only';
   ContactSort _sort = ContactSort.nameAsc;
   String _query = '';
 
@@ -109,7 +115,33 @@ class _ContactsViewState extends State<ContactsView> {
       if (layout != null) _layout = layout;
       if (showBanner != null) _showBanner = showBanner;
     });
+    try {
+      final rec = await PublicOSSettings.getSetting(_starredOnlyKey);
+      if (rec != null && mounted) {
+        setState(() => _starredOnly = rec.value != 'false');
+      }
+    } catch (_) {}
   }
+
+  void _setStarredOnly(bool value) {
+    if (_starredOnly == value) return;
+    setState(() => _starredOnly = value);
+    () async {
+      try {
+        await PublicOSSettings.setSetting(
+          _starredOnlyKey,
+          Record.asSettings(
+              key: _starredOnlyKey, value: value.toString(), isSystem: true),
+        );
+      } catch (_) {}
+    }();
+  }
+
+  /// Starred, or the publicos org (always starred, no toggle).
+  bool _isStarred(Contact c) =>
+      c.bookmarked == true ||
+      (c.publicosAddress != null &&
+          PublicOSContacts.isAlwaysStarred(c.publicosAddress!));
 
   /// Initial + manual refresh. Loads stored contacts, drops zero-address
   /// entries and the current user. Pre-auth silently no-ops.
@@ -249,6 +281,7 @@ class _ContactsViewState extends State<ContactsView> {
   String? _filteredKeyQuery;
   bool? _filteredKeyShowPersonal;
   bool? _filteredKeyShowOrgs;
+  bool? _filteredKeyStarredOnly;
   ContactSort? _filteredKeySort;
 
   List<Contact> get _filteredContacts {
@@ -258,11 +291,18 @@ class _ContactsViewState extends State<ContactsView> {
         _filteredKeyQuery == _query &&
         _filteredKeyShowPersonal == _showPersonal &&
         _filteredKeyShowOrgs == _showOrgs &&
+        _filteredKeyStarredOnly == _starredOnly &&
         _filteredKeySort == _sort) {
       return _cachedFiltered!;
     }
 
     Iterable<Contact> view = _all;
+
+    // The Starred chip narrows the LIST only. A search looks through every
+    // stored contact, as it always has.
+    if (_starredOnly && _query.trim().isEmpty) {
+      view = view.where(_isStarred);
+    }
 
     if (!_showPersonal || !_showOrgs) {
       view = view.where((c) {
@@ -315,6 +355,7 @@ class _ContactsViewState extends State<ContactsView> {
     _filteredKeyQuery = _query;
     _filteredKeyShowPersonal = _showPersonal;
     _filteredKeyShowOrgs = _showOrgs;
+    _filteredKeyStarredOnly = _starredOnly;
     _filteredKeySort = _sort;
     return list;
   }
@@ -380,6 +421,25 @@ class _ContactsViewState extends State<ContactsView> {
             label: l10n.contactsViewShare,
             onTap: () =>
                 Share.share('https://publicos.dev/publicosAddress/$address'),
+          ),
+        // Star: this contact raises chain notifications. Not offered for the
+        // publicos org, which is always starred.
+        if (contact.publicosAddress != null &&
+            !PublicOSContacts.isAlwaysStarred(contact.publicosAddress!))
+          GlassContextMenuItem(
+            icon: contact.bookmarked == true
+                ? Icons.star_rounded
+                : Icons.star_border_rounded,
+            label: contact.bookmarked == true
+                ? l10n.contactsViewUnstar
+                : l10n.contactsViewStar,
+            onTap: () async {
+              try {
+                await PublicOSContacts.setStarred(
+                    contact, contact.bookmarked != true);
+              } catch (_) {}
+              if (mounted) await _loadContacts(showSpinner: false);
+            },
           ),
         GlassContextMenuItem(
           icon: Icons.delete_outline_rounded,
@@ -512,6 +572,8 @@ class _ContactsViewState extends State<ContactsView> {
           SliverToBoxAdapter(
             child: RepaintBoundary(
               child: _ContactsChipBar(
+                starredOnly: _starredOnly,
+                onToggleStarred: () => _setStarredOnly(!_starredOnly),
                 showPersonal: _showPersonal,
                 showOrgs: _showOrgs,
                 sort: _sort,
@@ -543,6 +605,10 @@ class _ContactsViewState extends State<ContactsView> {
               child: _EmptyState(
                 tokens: tokens,
                 hasQuery: _query.trim().isNotEmpty,
+                // Contacts exist, none of them starred, and the chip is on.
+                noneStarred: _starredOnly &&
+                    _query.trim().isEmpty &&
+                    _all.isNotEmpty,
               ),
             )
           else if (_layout == ContactsLayout.rows)
@@ -710,6 +776,8 @@ class _SearchField extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _ContactsChipBar extends StatelessWidget {
+  final bool starredOnly;
+  final VoidCallback onToggleStarred;
   final bool showPersonal;
   final bool showOrgs;
   final ContactSort sort;
@@ -720,6 +788,8 @@ class _ContactsChipBar extends StatelessWidget {
   final VoidCallback onSettings;
 
   const _ContactsChipBar({
+    required this.starredOnly,
+    required this.onToggleStarred,
     required this.showPersonal,
     required this.showOrgs,
     required this.sort,
@@ -735,6 +805,13 @@ class _ContactsChipBar extends StatelessWidget {
     final l10n = context.l10n;
     return ExplorerChipBar(
       children: [
+        ExplorerChip(
+          label: l10n.contactsViewFilterStarred,
+          icon: starredOnly ? Icons.star_rounded : Icons.star_border_rounded,
+          active: starredOnly,
+          onTap: onToggleStarred,
+        ),
+        const SizedBox(width: 16),
         ExplorerChip(
           label: l10n.contactsViewFilterPersonal,
           icon: Icons.person_outline_rounded,
@@ -925,7 +1002,12 @@ class _ErrorState extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   final GlassTokens tokens;
   final bool hasQuery;
-  const _EmptyState({required this.tokens, required this.hasQuery});
+  final bool noneStarred;
+  const _EmptyState({
+    required this.tokens,
+    required this.hasQuery,
+    this.noneStarred = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -958,7 +1040,9 @@ class _EmptyState extends StatelessWidget {
             Text(
               hasQuery
                   ? context.l10n.contactsViewNoMatchesHint
-                  : context.l10n.contactsViewEmptyHint,
+                  : noneStarred
+                      ? context.l10n.contactsViewNoStarred
+                      : context.l10n.contactsViewEmptyHint,
               textAlign: TextAlign.center,
               style: TextStyle(
               fontFamily: 'SpaceGrotesk',

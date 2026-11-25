@@ -40,7 +40,8 @@ import 'package:publicos_client/widgets/shell_chrome_scope.dart';
 /// Onboarding gate — if the `onboarding_completed` setting isn't set, renders
 /// `OnboardingFlow` (the doing-tour, `components/onboarding/`) in place of the
 /// shell. Live mode: `_finish` writes the flag on the outro, then `onComplete`
-/// swaps the shell in without a navigation.
+/// swaps the shell in without a navigation. The 15-page reading-tour it
+/// replaced (`OnboardingScreen`) was retired to `_trash/`.
 class Explorer extends StatefulWidget {
   const Explorer({super.key});
 
@@ -125,8 +126,7 @@ class _ExplorerState extends State<Explorer>
   late final Animation<double> _chromeAnim;
 
   /// Reveal only: a downward pull of more than this in one frame brings the
-  /// chrome back (pulling hard brings it in). The hide
-  /// has no threshold — it follows the finger.
+  /// chrome back. The hide has no threshold — it follows the finger.
   static const double _scrollRevealThreshold = 6;
 
   // Back-to-exit guard. The explorer is the app root, so a system back here
@@ -137,10 +137,52 @@ class _ExplorerState extends State<Explorer>
   Timer? _exitArmTimer;
   static const Duration _exitWindow = Duration(seconds: 2);
 
+  /// Messages button badge: incoming messages that arrived while the Messages
+  /// tab was NOT showing. In memory only: 0 at every launch, no seed from the
+  /// per-conversation unread counts (a different question). Cleared on any
+  /// entry into Messages, whether or not the chats get opened.
+  int _messagesBadge = 0;
+  bool _messagesBadgeReady = false;
+  StreamSubscription<Message>? _messagesBadgeSub;
+  static const int _messagesTab = 3;
+
+  /// Same rules as desktop's `_onIncomingMessage`: only messages from others,
+  /// only content (never reactions, receipts or system messages), and not
+  /// while Messages is the tab on screen. One more on mobile: a message for
+  /// the chat that is open right now is not counted either (a chat opened
+  /// from a notification sits over another tab).
+  void _onMessageForBadge(Message message) {
+    if (!_messagesBadgeReady || !mounted) return;
+    if (message.senderInboxId == PublicOS.clientXmtpInboxId) return;
+    if (_currentIndex == _messagesTab) return;
+    if (message.xmtpConversationTopic ==
+        PublicOSConversations.activeConversationTopic) {
+      return;
+    }
+    switch (message.content.type) {
+      case MessageType.text:
+      case MessageType.attachment:
+      case MessageType.remoteAttachment:
+      case MessageType.reply:
+        setState(() => _messagesBadge++);
+      default:
+        break;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The 4 s gate keeps the history replay at boot out of the count
+    // (desktop's gate, same reason).
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) _messagesBadgeReady = true;
+    });
+    _messagesBadgeSub = PublicOS.messageStream.listen(
+      _onMessageForBadge,
+      onError: (_) {},
+    );
     _checkOnboarding();
     _chromeCtrl = AnimationController(
       vsync: this,
@@ -193,6 +235,7 @@ class _ExplorerState extends State<Explorer>
 
   @override
   void dispose() {
+    _messagesBadgeSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     appRouteObserver.unsubscribe(this);
     _stopStatusPolling();
@@ -256,9 +299,11 @@ class _ExplorerState extends State<Explorer>
   // survives an org redeploy to a different account address.
   static const String _publicosOrgName = 'PublicOS';
 
-  // Onboarding follows the ACCOUNT, so there is no per-channel key to know:
-  // whatever the org publishes resolves at read time, including channels that
-  // did not exist at onboarding.
+  // The `rss.newsletter` / `rss.publicos` keys and `_findChannelRecord` lived
+  // here. They existed to pick two specific channels to snapshot into the
+  // default list. Onboarding follows the ACCOUNT now, so there is no
+  // per-channel key to know: whatever the org publishes resolves at read time,
+  // including channels that did not exist at onboarding.
 
   /// One-time, name-resolved onboarding of the canonical PublicOS org: upsert
   /// the "PublicOS" contact and follow its newsletter RSS tab as a single
@@ -272,8 +317,8 @@ class _ExplorerState extends State<Explorer>
   /// Best-effort — never blocks Explorer.
   Future<void> _ensurePublicosOnboarded() async {
     var changed = false;
-    for (final (name, flag) in _defaultFollows) {
-      changed = await _ensureDefaultFollow(name, flag) || changed;
+    for (final (name, flag, muted) in _defaultFollows) {
+      changed = await _ensureDefaultFollow(name, flag, muted) || changed;
     }
     // Surface the freshly-seeded follows without a manual refresh — covers
     // the no-onboarding-overlay path where Feeds is already built on landing.
@@ -286,16 +331,24 @@ class _ExplorerState extends State<Explorer>
   /// its OWN one-time flag. A separate flag per account means an account that
   /// already finished onboarding still picks up a newly added default on next
   /// launch.
-  static const List<(String, String)> _defaultFollows = [
-    (_publicosOrgName, _publicosOnboardedFlag),
-    ('jmsl', 'jmsl_default_follow'),
+  ///
+  /// The third field lists channels (by the owner's `record.key`) that start
+  /// muted in that follow: the account is followed, those channels show as
+  /// turned off and the user can turn them on. Backstage is TheOrg's private
+  /// channel, and following it by default gave every newcomer the "private
+  /// feed" warning for something they never chose.
+  static const List<(String, String, List<String>)> _defaultFollows = [
+    (_publicosOrgName, _publicosOnboardedFlag, []),
+    ('jmsl', 'jmsl_default_follow', []),
     // TheOrg lists the channels its members run (Diez Palomas, Backstage).
-    ('TheOrg', 'theorg_default_follow'),
+    ('TheOrg', 'theorg_default_follow', ['channel.backstage']),
   ];
 
   /// Resolve [name] on chain, upsert the contact, follow the ACCOUNT into the
-  /// default list, then burn [flag]. Returns true when it followed now.
-  Future<bool> _ensureDefaultFollow(String name, String flag) async {
+  /// default list with the channels in [muted] turned off, then burn [flag].
+  /// Returns true when it followed now.
+  Future<bool> _ensureDefaultFollow(
+      String name, String flag, List<String> muted) async {
     try {
       final already = await PublicOSSettings.getSetting(flag);
       if (already?.value == 'true') return false;
@@ -306,15 +359,19 @@ class _ExplorerState extends State<Explorer>
       final org = await PublicOSContacts.resolveByIdentifier(name);
       if (org == null || org.publicosAddress == null) return false;
 
-      // Upsert the contact.
+      // Upsert the contact, starred: a default follow is a contact the new
+      // account gets chain notifications about.
       await PublicOSContacts.saveContact(org);
+      await PublicOSContacts.setStarred(org, true);
 
-      // NO channel-record gate. Onboarding seeds the ACCOUNT (below), so the
-      // org's channel records are nothing to it: `resolveProfileChannels` reads
-      // the org's channel set live every time the list is opened. Gating on
-      // them would only create a failure mode — a momentarily thin profile
-      // blocking an onboarding that would have worked fine, and whose channels
-      // would have appeared on first read anyway.
+      // NO channel-record gate. Onboarding used to require both `rss.newsletter`
+      // and `rss.publicos` to resolve before burning the flag — a leftover from
+      // when it stored two channel SNAPSHOTS. It seeds the ACCOUNT now (below),
+      // so those records are nothing to it: `resolveProfileChannels` reads the
+      // org's channel set live every time the list is opened. Gating on them
+      // only created a failure mode — a momentarily thin profile blocked an
+      // onboarding that would have worked fine, and whose channels would have
+      // appeared on first read anyway.
       final following = await _ensureDefaultList();
       final session = PublicOS.sessionBlockchainAddress;
       if (following == null || session == null) return false;
@@ -330,6 +387,16 @@ class _ExplorerState extends State<Explorer>
         account: org.publicosAddress!.eip55With0x,
         listId: following.id,
       );
+      // Channels that start turned off in this follow (a key the account
+      // doesn't have matches nothing and is harmless).
+      for (final key in muted) {
+        await PublicOS.database.muteChannel(
+          session: session,
+          account: org.publicosAddress!.eip55With0x,
+          listId: following.id,
+          recordKey: key,
+        );
+      }
 
       // Mark done only after a successful resolve + save.
       await PublicOSSettings.setSetting(
@@ -382,13 +449,12 @@ class _ExplorerState extends State<Explorer>
   ///
   /// The local row is what everything paints, and its `isCitizen` is durable:
   /// `fetchContact` never re-reads it unless forced. So someone vouched since
-  /// their last session would keep the ghost avatar app-wide until they
-  /// happened to open their own profile. This is that profile visit, done at
-  /// landing:
+  /// their last session kept the ghost avatar app-wide until they happened to
+  /// open their own profile. This is that profile visit, done at landing:
   /// `fetchContact(self, forceMembership: true)` saves the row and emits on
-  /// `selfContactUpdates`, and the app bar, wallet and every other self
-  /// surface repaint from the stream. Background, best-effort: the cached
-  /// contact is already on screen, and a failed read leaves it there.
+  /// `selfContactUpdates`, and the app bar, wallet and every other self surface
+  /// repaint from the stream. Background, best-effort: the cached contact is
+  /// already on screen, and a failed read leaves it there.
   Future<void> _freshenMyContact() async {
     final hex = PublicOS.myPublicosAddress;
     if (hex == null || _freshenedFor == hex.toLowerCase()) return;
@@ -551,8 +617,9 @@ class _ExplorerState extends State<Explorer>
       await _refreshUnreadCount();
     } catch (e, st) {
       // A silent catch on a background poll is how a feature dies quietly on
-      // one platform while looking fine on the other: the bell shows nothing
-      // and the reason is swallowed on every tick.
+      // one platform while looking fine on the other — which is exactly what
+      // happened on desktop when the bell showed nothing for hours and the
+      // reason was being swallowed on every tick.
       debugPrint('[activity] contract sweep FAILED: $e');
       debugPrint('$st');
     }
@@ -576,14 +643,14 @@ class _ExplorerState extends State<Explorer>
 
       // **Do not sweep on a partial watched set.** Sweeping is what advances
       // the cursor, and the cursor is a promise that the range was handled. If
-      // a source failed we do not know what to look for, so scanning would
-      // step past those blocks having matched the wrong wallets — and Core is
-      // right never to re-scan them.
+      // a source failed we do not know what to look for, so scanning would step
+      // past those blocks having matched the wrong wallets — and Core is right
+      // never to re-scan them.
       //
       // Cost of skipping: nothing. The next tick retries with the cursor
-      // untouched. Cost of NOT skipping: a transfer to the main Safe gets
-      // swept past by a run whose Safe lookup failed, and becomes permanently
-      // invisible.
+      // untouched. Cost of NOT skipping, observed on desktop a 3 OX transfer to
+      // the main Safe at block 539742 was swept past by a run whose Safe lookup
+      // had failed, and became permanently invisible.
       if (!scan.complete) {
         debugPrint('[activity] wallet scan incomplete — skipping sweep so the '
             'cursor does not advance past unwatched blocks');
@@ -632,36 +699,36 @@ class _ExplorerState extends State<Explorer>
   // Chrome hide/show on scroll
   // ---------------------------------------------------------------------------
 
-  // Quick-return chrome: the header moves pixel by pixel with the finger.
+  // Quick-return chrome.
   //
   // THE RULE: the finger moves the chrome, nothing else. Every scroll update
   // that carries drag details hands its delta to the bar, in BOTH directions,
   // up to what is left of the bar's height: the body padding changes by that
   // amount (the bar, the tab's fixed header rows and the list all move
-  // together) and the list's own scroll offset is corrected by the same
-  // amount, so the posts hold still under the moving header instead of
-  // travelling at twice the finger's speed. That correction is the whole
-  // trick: it is what a nested scroll view does when a SliverAppBar consumes
-  // the scroll first, done with one position write. forcePixels notifies the
-  // viewport but dispatches no ScrollNotification, so there is no feedback
-  // loop.
+  // together) and the list's own scroll offset is corrected by the same amount,
+  // so the posts hold still under the moving header instead of travelling at
+  // twice the finger's speed. That correction is the whole trick: it is what a
+  // nested scroll view does when a SliverAppBar consumes the scroll first, done
+  // with one position write. forcePixels notifies the viewport but dispatches
+  // no ScrollNotification, so there is no feedback loop.
   //
   // Flings, the feed's snap spring, its settling ticks and the edge bounce
-  // carry no drag details and never touch the chrome. Reading them (a
-  // per-frame velocity gate tied to the refresh rate, or the spring's ticks)
-  // makes the bars a coin toss after a swipe back, and a snap's last
-  // millimetre could flip them.
+  // carry no drag details and never touch the chrome. Before this a reveal
+  // needed more than 6 px of downward motion in ONE frame (a velocity gate tied
+  // to the refresh rate) and a "snap heading down hides outright" branch read
+  // the spring's ticks too, so after a swipe back the bars were a coin toss and
+  // a snap's last millimetre could flip them.
   //
   // FINISH: when the finger lets go with the bar part-way, it animates to the
-  // nearer end. The let-go is the first
-  // update without drag details, or the scroll's end.
+  // nearer end. The let-go is the first update without drag details, or the
+  // scroll's end.
   //
   // TOP: a scroll that ends at the top shows the chrome.
   //
-  // SECOND SWIPE: with the bars fully hidden, the first downward drag
-  // only scrolls; the next one reveals, 1:1. An upward drag starts
-  // the count again. A drag that starts with the bars part-way or shown is
-  // never gated, and the top rule is unchanged.
+  // SECOND SWIPE: with the bars fully hidden, the first downward drag only
+  // scrolls; the next one reveals, 1:1 as before. An upward drag starts the
+  // count again. A drag that starts with the bars part-way or shown is never
+  // gated, and the top rule is unchanged.
 
   /// Downward drags finished since the last upward one.
   int _downSwipes = 0;
@@ -793,7 +860,10 @@ class _ExplorerState extends State<Explorer>
         setState(() => _currentIndex = 1);
         return;
       case 'messaging':
-        setState(() => _currentIndex = 3);
+        setState(() {
+          _currentIndex = _messagesTab;
+          _messagesBadge = 0;
+        });
         return;
       case 'wallets':
         setState(() => _currentIndex = 4);
@@ -922,11 +992,10 @@ class _ExplorerState extends State<Explorer>
                   children: List.generate(5, (i) {
                     if (i == _currentIndex || _tabCache[i] != null) {
                       _tabCache[i] ??= _buildTabFor(i, placeholderColor);
-                      // A hidden tab is offstage for real: its tickers stop
-                      // and its inline video tiles read TickerMode.of and
-                      // release their player.
-                      // IndexedStack alone keeps hidden children fully
-                      // live (Visibility.maintain), which would let a
+                      // A hidden tab is offstage for real: its tickers stop and
+                      // its inline video tiles read TickerMode.of and release
+                      // their player. IndexedStack alone keeps hidden children
+                      // fully live (Visibility.maintain), which is what let a
                       // feed clip play on under another tab.
                       return TickerMode(
                         enabled: i == _currentIndex,
@@ -991,10 +1060,14 @@ class _ExplorerState extends State<Explorer>
           ),
 
           // Back-to-exit pill — centered, fades in for `_exitWindow` after the
-          // first system-back on the app root (see _handleRootBack). Purely
-          // informational, so it never intercepts touches.
+          // first system-back on the reader's landing (see _handleRootBack).
+          // While it shows it is a button: people tap it, and the tap used to
+          // fall through to whatever was behind. A tap is the second back.
+          // Hidden, it takes no touches; only the pill itself is live, the rest
+          // of the screen stays reachable.
           Positioned.fill(
             child: IgnorePointer(
+              ignoring: !_exitArmed,
               child: Center(
                 child: AnimatedScale(
                   scale: _exitArmed ? 1.0 : 0.92,
@@ -1003,7 +1076,11 @@ class _ExplorerState extends State<Explorer>
                   child: AnimatedOpacity(
                     opacity: _exitArmed ? 1.0 : 0.0,
                     duration: const Duration(milliseconds: 160),
-                    child: _buildExitPill(tokens),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _handleRootBack,
+                      child: _buildExitPill(tokens),
+                    ),
                   ),
                 ),
               ),
@@ -1025,7 +1102,13 @@ class _ExplorerState extends State<Explorer>
   // `didChangeAppLifecycleState` clears it on resume in case the OS only
   // backgrounded us instead of killing the app (Android's SystemNavigator.pop
   // is not reliably terminal).
-  void _handleRootBack() {
+  //
+  // The pill is offered ONLY on the reader's landing (Feeds, on the view
+  // or list picked in Reading settings → Landing). A back anywhere else on the
+  // explorer goes there first: from another bottom tab, or from another list or
+  // view inside Feeds. The pill is also a button: a tap on it is the second
+  // back.
+  Future<void> _handleRootBack() async {
     if (_exitArmed) {
       // Dismiss FIRST, then ask to leave — if we're only backgrounded, we
       // return to a clean slate instead of a stuck pill.
@@ -1033,8 +1116,28 @@ class _ExplorerState extends State<Explorer>
       SystemNavigator.pop();
       return;
     }
-    _armExit();
+    if (_backBusy) return;
+    _backBusy = true;
+    try {
+      final wasOnFeeds = _currentIndex == 0;
+      // Null while the Feeds tab was never built: showing it then is a cold
+      // start, which lands on the landing by itself.
+      final moved = await _feedsKey.currentState?.goToLanding() ?? false;
+      if (!mounted) return;
+      if (!wasOnFeeds) {
+        setState(() => _currentIndex = 0);
+        return;
+      }
+      if (moved) return;
+      _armExit();
+    } finally {
+      _backBusy = false;
+    }
   }
+
+  /// A back is being worked out (the landing is read from settings); a second
+  /// one that arrives meanwhile is dropped, not queued.
+  bool _backBusy = false;
 
   void _armExit() {
     _exitArmTimer?.cancel();
@@ -1054,7 +1157,7 @@ class _ExplorerState extends State<Explorer>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
-        // Borderless: there is no ring, so the fill has to
+        // Borderless (styling_guide §1): the ring came out, so the fill has to
         // carry the edge on its own — one tone step above `surfaceElevated`,
         // opaque so the scaffold can't mute it back down.
         color: Color.alphaBlend(tokens.glassFillHover, tokens.surfaceElevated),
@@ -1112,19 +1215,18 @@ class _ExplorerState extends State<Explorer>
   }
 
   Widget _buildAppBar(BuildContext context, GlassTokens tokens) {
-    // Blur dropped — was costing per-frame GPU time for an effect that
-    // wasn't visually noticeable. Bumped opacity to keep the bar legible
-    // when content scrolls beneath it.
-    // The bar's content sits in one rounded panel, like desktop's rail
-    // (borderless, the fill carries the edge), in the bottom-nav selection
-    // colour.
+    // Blur dropped — was costing per-frame GPU time for an effect that wasn't
+    // visually noticeable. Bumped opacity to keep the bar legible when content
+    // scrolls beneath it. The bar's content sits in one rounded panel, like
+    // desktop's rail (borderless, the fill carries the edge), in the bottom-nav
+    // selection colour.
     return Container(
       color: tokens.background.withValues(alpha: 0.95),
       height: kToolbarHeight,
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-      // Radius ≈ the avatar's (an individual's: 40 % of its 32 px = 12.8)
-      // plus the 8 px inset, so the two corners run parallel. Fill one step
-      // darker than the nav pill.
+      // Radius ≈ the avatar's (an individual's: 40 % of its 32 px = 12.8) plus
+      // the 8 px inset, so the two corners run parallel. Fill one step darker
+      // than the nav pill.
       child: Container(
         padding: const EdgeInsets.only(left: 4, right: 4),
         decoration: BoxDecoration(
@@ -1141,7 +1243,7 @@ class _ExplorerState extends State<Explorer>
                       final me = AppStateNotifier.currentMyContact;
                       return Row(
                         children: [
-                          // 32 px, with 8 px of panel around it on every side.
+                          // 32 px, 8 px of panel around it on every side.
                           GestureDetector(
                             onTap: () => AppNav.toMyProfile(context),
                             child: Padding(
@@ -1156,17 +1258,21 @@ class _ExplorerState extends State<Explorer>
                           ),
                           const SizedBox(width: 10),
                           Flexible(
-                            child: Text(
-                              me?.publicosDisplayName ??
-                                  me?.displayName ??
-                                  '',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: tokens.starkWhite,
-                                letterSpacing: 0.5,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => AppNav.toMyProfile(context),
+                              child: Text(
+                                me?.publicosDisplayName ??
+                                    me?.displayName ??
+                                    '',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: tokens.starkWhite,
+                                  letterSpacing: 0.5,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -1221,10 +1327,8 @@ class _ExplorerState extends State<Explorer>
   }
 
   /// A bottom-nav glyph, with a filled pill behind it while its tab is
-  /// selected (a pill whose flat run
-  /// is about the icon's width: 32 tall, 56 wide = 24 flat). The fill is one
-  /// step up from the bar, opaque, the styling guide's "pill above the
-  /// screen" rule.
+  /// selected. The fill is one step up from the bar, opaque, the styling
+  /// guide's "pill above the screen" rule.
   Widget _navIcon(int index, GlassTokens tokens, Widget glyph) {
     final active = _currentIndex == index;
     return AnimatedContainer(
@@ -1240,6 +1344,26 @@ class _ExplorerState extends State<Explorer>
             : Colors.transparent,
       ),
       child: glyph,
+    );
+  }
+
+  /// The count on the Messages button: desktop's rail pill, same colours.
+  Widget _messagesCountPill(GlassTokens tokens, int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: tokens.connectedAccent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'SpaceGrotesk',
+          color: Color(0xFF0A0A0A),
+        ),
+      ),
     );
   }
 
@@ -1278,13 +1402,16 @@ class _ExplorerState extends State<Explorer>
         selectedFontSize: 0,
         unselectedFontSize: 0,
         onTap: (i) {
-          // Feeds is showing → its button is a hamburger: open the lists
-          // drawer instead of switching.
+          // Feeds is showing → its button is a hamburger: open the lists drawer
+          // instead of switching.
           if (i == 0 && _currentIndex == 0) {
             _feedsKey.currentState?.toggleDrawer();
             return;
           }
-          setState(() => _currentIndex = i);
+          setState(() {
+            _currentIndex = i;
+            if (i == _messagesTab) _messagesBadge = 0;
+          });
           // Tab tap on Feeds = silent refresh: re-pull lists/channels in the
           // background but keep the loaded feed on screen. A loud refresh here
           // tore the body down to a spinner and remounted PostsList, which is
@@ -1324,7 +1451,23 @@ class _ExplorerState extends State<Explorer>
             label: context.l10n.explorerTabApps,
           ),
           BottomNavigationBarItem(
-            icon: _navIcon(3, tokens, const Icon(Icons.message_outlined)),
+            icon: _navIcon(
+              _messagesTab,
+              tokens,
+              _messagesBadge > 0
+                  ? Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.message_outlined),
+                        Positioned(
+                          top: -5,
+                          right: -9,
+                          child: _messagesCountPill(tokens, _messagesBadge),
+                        ),
+                      ],
+                    )
+                  : const Icon(Icons.message_outlined),
+            ),
             label: context.l10n.explorerTabMessages,
           ),
           BottomNavigationBarItem(
